@@ -44,7 +44,7 @@ test("grant evidence matches core sectors, not disbursements, clinical labels or
 test("Grants.gov normalizes rolling and stale notices and decodes title entities",()=>{
  const [rolling,stale,expired]=parseUs({errorcode:0,data:{oppHits:[
   {id:"41",title:"Law &amp; Science &ndash; rolling",closeDate:"10/15/2076"},
-  {id:"42",title:"EONS 2018",postDate:"05/01/2018"},
+  {id:"42",title:"EONS 2018",openDate:" 02/22/2018 "},
   {id:"43",title:"Expired",closeDate:"05/22/2018"},
  ]}},at);
  assert.equal(rolling.title,"Law & Science – rolling");
