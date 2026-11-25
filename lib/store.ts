@@ -118,11 +118,31 @@ function topicalRows<T>(name:Source|FactSource,key:string,load:(read:ReturnType<
   });
   return result;
 }
-function mergeOpportunities(rows:Opportunity[]) {
+const ukCompetitionTitle=(title:string)=>title.toLowerCase().replace(/&/g," and ").match(/[\p{L}\p{N}]+/gu)?.join(" ");
+const ukCompetitionUrl=(url:string)=>{
+  const parsed=URL.parse(url);
+  return parsed && parsed.hostname.replace(/^www\./,"")+parsed.pathname.replace(/\/+$/,"");
+};
+export function mergeOpportunities(rows:Opportunity[]) {
   const byId=new Map<string,Opportunity>();
   for(const row of rows){
     const earlier=byId.get(row.id);
     if(!earlier || row.description || (!earlier.description&&row.fetchedAt>earlier.fetchedAt)) byId.set(row.id,row);
+  }
+  const innovate=[...byId.values()].filter(row=>row.source==="Innovate UK");
+  for(const row of byId.values()){
+    if(row.source!=="UK Find a Grant") continue;
+    const url=ukCompetitionUrl(row.url),title=ukCompetitionTitle(row.title),day=row.deadline?.slice(0,10);
+    const exact=url && innovate.find(candidate=>ukCompetitionUrl(candidate.url)===url);
+    const similar=title && day ? innovate.filter(candidate=>ukCompetitionTitle(candidate.title)===title &&
+      candidate.deadline?.slice(0,10)===day) : [];
+    const match=exact || (similar.length===1 ? similar[0] : undefined);
+    if(!match) continue;
+    const current=byId.get(match.id)!;
+    const timed=row.deadline?.includes("T") && row.deadline.slice(0,10)===current.deadline?.slice(0,10);
+    byId.set(match.id,{...current,description:current.description??row.description,amount:current.amount??row.amount,
+      ...(timed?{deadline:row.deadline,status:row.status}:{})});
+    byId.delete(row.id);
   }
   return [...byId.values()];
 }

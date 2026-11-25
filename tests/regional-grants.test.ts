@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { demo, listingStatus, opportunityLocation, profileSchema, rank } from "../lib/domain";
 import { parseUkGovernmentGrants, sources } from "../lib/sources";
+import { mergeOpportunities } from "../lib/store";
 
 const at="2026-11-25T12:00:00Z";
 const sample={
@@ -69,4 +70,19 @@ test("UK Find a Grant honors GMT and BST closing times, including for cached lis
  assert.equal(rows[0].status,"Closed");
  assert.equal(rows[1].deadline,"2027-07-01T10:00:00.000Z");
  assert.equal(listingStatus({...rows[1],status:"Open"},"2027-07-01T10:00:00Z"),"Closed");
+});
+
+test("cross-feed duplicate competitions keep the direct listing and exact deadline without merging different rounds",()=>{
+ const [find]=parseUkGovernmentGrants(html([{...sample,grantName:"Battery Innovation: Concept Development Rd 3"}]),at).rows;
+ const innovate={...find,id:"innovate-uk-2572",source:"Innovate UK",title:"Battery Innovation – Concept Development Rd 3",
+  url:"https://apply-for-innovation-funding.service.gov.uk/competition/2572/overview/id",deadline:"2026-12-20",amount:null,description:undefined};
+ const next={...find,id:"another-call",deadline:"2027-03-01"};
+ const [first,second]=mergeOpportunities([innovate,find,next]);
+ assert.equal(first.id,innovate.id);
+ assert.equal(first.url,innovate.url);
+ assert.equal(first.deadline,find.deadline);
+ assert.equal(first.amount,find.amount);
+ assert.equal(second.id,next.id);
+ const sameUrl={...find,title:"Different spelling",url:innovate.url+"/?utm_source=find"};
+ assert.deepEqual(mergeOpportunities([sameUrl,innovate]).map(o=>o.id),[innovate.id]);
 });
