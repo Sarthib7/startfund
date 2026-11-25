@@ -1,7 +1,7 @@
 import { Resolver } from "node:dns/promises";
 import { request } from "node:https";
 import { BlockList, isIP } from "node:net";
-import { kinds, type Profile } from "./domain";
+import { euCountryCodes, kinds, resolveRegion, type Profile } from "./domain";
 import { cleanText } from "./sources";
 
 const resolver=new Resolver({timeout:2000,tries:1});
@@ -160,7 +160,9 @@ export function inferCompany(html:string,about:string,url:URL) {
     url.hostname.endsWith(".us")||/\b(?:based in|headquartered in) (?:the )?(?:U\.S\.|United States)\b/i.test(text+" "+about)?"US":
     url.hostname.endsWith(".eu")?"EU":"Other";
   const stage=/\b(?:series [a-d]|growth.stage)\b/i.test(text)?"Growth":/\bpre.seed\b/i.test(text)?"Pre-seed":/\bseed (?:round|funding|stage)\b/i.test(text)?"Seed":"Not sure";
-  return {name:cleanText(brand,80)??url.hostname,description,sector,region,stage,needs:[...kinds]} satisfies Profile;
+  const tld=url.hostname.split(".").at(-1)?.toUpperCase()??"";
+  const companyCountry=tld==="UK"?"GB":tld==="US" || Object.hasOwn(euCountryCodes,tld) ? tld : undefined;
+  return {name:cleanText(brand,80)??url.hostname,description,sector,region:resolveRegion({region,companyCountry}),regionExplicit:false,stage,needs:[...kinds],...(companyCountry?{companyCountry}:{})} satisfies Profile;
 }
 const cache=new Map<string,{until:number;profile:Profile;url:string}>();
 let active=0;
