@@ -294,6 +294,17 @@ const ukGrantRow=z.object({
  grantMaximumAward:z.unknown(),grantApplicationOpenDate:z.string().optional(),grantApplicationCloseDate:z.string().optional(),
 });
 const ukRegions:Record<string,string>={England:"GB-ENG",Scotland:"GB-SCT",Wales:"GB-WLS","Northern Ireland":"GB-NIR"};
+const londonOffset=new Intl.DateTimeFormat("en",{timeZone:"Europe/London",timeZoneName:"longOffset"});
+function ukGrantDeadline(value:string|undefined) {
+ const day=date(value);
+ if(!day || !value || value===day) return day;
+ const match=value.match(/^\d{4}-\d{2}-\d{2}T((?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d+)?)?)(Z|[+-]\d{2}:\d{2})?$/);
+ if(!match) return day;
+ const clock=day+"T"+match[1];
+ const zone=(instant:number)=>londonOffset.formatToParts(instant).find(p=>p.type==="timeZoneName")?.value.slice(3)||"Z";
+ const stamp=Date.parse(clock+(match[2]??zone(Date.parse(clock+"Z"))));
+ return Number.isFinite(stamp)?new Date(stamp).toISOString():day;
+}
 export function parseUkGovernmentGrants(html:string,at:string) {
  const script=html.match(/<script\b[^>]*\bid="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
  if(!script) throw new Error("Find a Grant listing data unavailable");
@@ -310,8 +321,9 @@ export function parseUkGovernmentGrants(html:string,at:string) {
   const subdivisions=r.grantLocation.map(area=>ukRegions[area]??(area.endsWith(" England")||area==="Midlands"?"GB-ENG":undefined))
    .filter((area):area is string=>area!==undefined);
   if(!national && !subdivisions.length) return [];
-  const opensAt=date(r.grantApplicationOpenDate), deadline=date(r.grantApplicationCloseDate);
-  const status=deadline && deadline<today?"Closed":opensAt && opensAt>today?"Forthcoming":opensAt && deadline?"Open":"Program link";
+  const opensAt=date(r.grantApplicationOpenDate), deadline=ukGrantDeadline(r.grantApplicationCloseDate);
+  const closed=deadline && (deadline.includes("T")?Date.parse(deadline)<=Date.parse(at):deadline<today);
+  const status=closed?"Closed":opensAt && opensAt>today?"Forthcoming":opensAt && deadline?"Open":"Program link";
   return [{id:"gb-find-"+r.label,title,kind:"Grant",region:"UK",countries:["GB"],
    ...(!national?{subdivisions:[...new Set(subdivisions)]}:{}),
    description:cleanText(r.grantShortDescription,3500)??undefined,eligibility:"Listed for private-sector applicants; check the individual grant’s rules.",

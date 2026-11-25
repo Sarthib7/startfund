@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { demo, opportunityLocation, profileSchema, rank } from "../lib/domain";
+import { demo, listingStatus, opportunityLocation, profileSchema, rank } from "../lib/domain";
 import { parseUkGovernmentGrants, sources } from "../lib/sources";
 
 const at="2026-11-25T12:00:00Z";
@@ -59,4 +59,14 @@ test("curated programs use country or exact subdivision from either company or d
  const scotland=ids({companyCountry:"UK",companySubdivision:"GB-SCT"});
  assert.ok(scotland.includes("gb-scot-scale") && !scotland.includes("gb-wales-smart"));
  assert.equal(profileSchema.safeParse({...demo,companyCountry:"FR",companySubdivision:"US-CA"}).success,false);
+});
+
+test("UK Find a Grant honors GMT and BST closing times, including for cached listings",()=>{
+ const winter={...sample,grantApplicationCloseDate:"2026-11-25T11:00"};
+ const summer={...sample,grantApplicationOpenDate:"2027-03-01",grantApplicationCloseDate:"2027-07-01T11:00"};
+ const {rows}=parseUkGovernmentGrants(html([winter,summer]),at);
+ assert.equal(rows[0].deadline,"2026-11-25T11:00:00.000Z");
+ assert.equal(rows[0].status,"Closed");
+ assert.equal(rows[1].deadline,"2027-07-01T10:00:00.000Z");
+ assert.equal(listingStatus({...rows[1],status:"Open"},"2027-07-01T10:00:00Z"),"Closed");
 });
