@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { POST as suggest } from "../app/api/suggestions/route";
-import { POST as review } from "../app/api/admin/suggestions/route";
+import { GET as queue, POST as review } from "../app/api/admin/suggestions/route";
 import { approvedOpportunities, communitySource, pendingSuggestions } from "../lib/suggestions";
 import { catalog, completedRadar } from "../lib/store";
 import { demo, rank } from "../lib/domain";
@@ -34,6 +34,10 @@ test("only authorized approval publishes an opportunity and invalidates its scan
  process.env.RADAR_ADMIN_TOKEN=token;
  try{
   const pending=await pendingSuggestions();
+  assert.equal((await queue(new Request("https://example.org/api/admin/suggestions"))).status,404);
+  const authorizedQueue=await queue(new Request("https://example.org/api/admin/suggestions",{headers:{authorization:"Bearer "+token}}));
+  assert.equal(authorizedQueue.headers.get("cache-control"),"no-store");
+  assert.deepEqual(await authorizedQueue.json(),pending);
   const candidate=pending.find(row=>row.name===input.name)!;
   const reject=pending.find(row=>row.name==="Reject me")!;
   const profile={...demo,sector:"Clean energy",description:"Developing climate hardware and heat pumps"};

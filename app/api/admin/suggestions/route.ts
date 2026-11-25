@@ -1,5 +1,10 @@
 import { isAdmin } from "../../../../lib/admin";
-import { reviewSuggestion } from "../../../../lib/suggestions";
+import { pendingSuggestions, reviewSuggestion } from "../../../../lib/suggestions";
+
+export async function GET(request:Request){
+ if(!isAdmin(request.headers))return new Response(null,{status:404});
+ return Response.json(await pendingSuggestions(),{headers:{"Cache-Control":"no-store"}});
+}
 
 export async function POST(request:Request){
  if(!isAdmin(request.headers))return new Response(null,{status:404});
