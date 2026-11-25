@@ -21,7 +21,7 @@ const money=(value:number,m:Match)=>new Intl.NumberFormat("en",{style:"currency"
 const dueLabel=(m:Match)=>m.noticeExpires?"Next due":listingStatus(m)==="Late applications"?"On-time deadline":"Due";
 const initialClean=(p:Profile)=>selectProfileRegion({...p,name:"",description:"",sector:"",email:"",companyCountry:undefined,developerCountries:undefined,companySubdivision:undefined,developerSubdivisions:undefined,priorNihAward:undefined,plansClinicalTrial:undefined});
 
-export default function Dashboard({initialProfile,initialRadar,initialSample}:{initialProfile:Profile;initialRadar:Radar;initialSample:boolean}){
+export default function Dashboard({initialProfile,initialRadar,initialSample,initialNow}:{initialProfile:Profile;initialRadar:Radar;initialSample:boolean;initialNow:string}){
  const [profile,setProfile]=useState(initialProfile),[saved,setSaved]=useState(initialProfile),[radar,setRadar]=useState(initialRadar);
  const [teamCountries,setTeamCountries]=useState(initialProfile.developerCountries?.join(", ")??"");
  const [teamSubdivisions,setTeamSubdivisions]=useState(initialProfile.developerSubdivisions?.join(", ")??"");
@@ -155,7 +155,7 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
      <p className="meta">For {saved.name} <span>·</span> Scanned {formatDate(radar.scannedAt)} UTC</p>
      {!shownBundle&&<ReportSummary score={radar.matches.length?Math.max(...radar.matches.map(m=>m.score)):null} total={radar.matches.length}/>}
      <div className="action-strip">{!sample&&radar.scanId&&<ShareControls key={radar.scanId} scanId={radar.scanId}/>}<SuggestOpportunity/></div>
-     {!shownBundle&&<MatchAnalytics radar={radar}/>}
+     {!shownBundle&&<MatchAnalytics radar={radar} initialNow={initialNow}/>}
      <nav className="filters" aria-label="Filter opportunities">{(["All",...kinds] as const).map(x=><button type="button" key={x} className={filter===x?"selected":""} aria-pressed={filter===x} onClick={()=>setFilter(x)}>{x==="All"?x:names[x]}</button>)}</nav>
      {radar.warnings.length>0&&<p className="warning">{radar.warnings.join(" · ")}</p>}
      <ul className="rows">{shownBundle ? shownBundle.map(item=><li key={item.id}><div className="rowmain">

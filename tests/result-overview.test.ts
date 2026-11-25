@@ -13,4 +13,5 @@ test("result insights separate score bands, upcoming deadlines and reported curr
  assert.deepEqual(result.deadlines.map(row=>row.id),["a"]);
  assert.equal(result.covered,2);
  assert.deepEqual(result.amounts.map(row=>[row.currency,row.min,row.max]),[["USD",200,200],["EUR",300,300]]);
+ assert.deepEqual(resultOverview([match],"2027-01-02T00:00:00Z").deadlines,[]);
 });

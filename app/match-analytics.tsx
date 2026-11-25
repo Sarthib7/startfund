@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useState } from "react";
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { Radar } from "../lib/domain";
 import { resultOverview } from "../lib/result-overview";
@@ -21,8 +22,15 @@ function Counts({rows}:{rows:{label:string;count:number}[]}){
  </>;
 }
 
-export function MatchAnalytics({radar}:{radar:Radar}){
- const data=resultOverview(radar.matches,radar.scannedAt);
+export function MatchAnalytics({radar,initialNow}:{radar:Radar;initialNow:string}){
+ const [now,setNow]=useState(initialNow);
+ useEffect(()=>{
+  const refresh=()=>setNow(new Date().toISOString());
+  refresh();
+  const timer=setInterval(refresh,60_000);
+  return ()=>clearInterval(timer);
+ },[]);
+ const data=resultOverview(radar.matches,now);
  return <section className="match-analytics" aria-label="Scan analytics">
   <div><div className="section-kicker">SCAN INSIGHTS</div><h3>Shortlist at a glance</h3><p className="meta">Based on all {radar.matches.length} ranked matches, before filters.</p></div>
   {radar.matches.length?<div className="analytics-grid">
