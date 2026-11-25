@@ -99,6 +99,23 @@ test("EU calls keep future deadlines and exclude third-party URLs",()=>{
  assert.equal(parseEu({results:[row]},at)[0].deadline,"2027-04-01");
  assert.deepEqual(parseEu({results:[{...row,url:"https://other.net"},{...row,metadata:{...row.metadata,status:["closed"]}}]},at),[]);
 });
+test("Horizon Europe association matches UK and other associated countries without widening other EU calls",()=>{
+ const call=(identifier:string,title:string)=>({reference:identifier,url:"https://ec.europa.eu/test",metadata:{
+  identifier:[identifier],title:[title],deadlineDate:["2027-04-01"],status:["31094502"],
+ }});
+ const items=parseEu({results:[
+  call("HORIZON-CL4-2027-01","Manufacturing energy software"),
+  call("HORIZON-EIC-2027-ACCELERATOR-01","Manufacturing energy software"),
+  call("HORIZON-EIC-2027-ACCELERATOR-02","Equity-only manufacturing energy software"),
+  call("DIGITAL-2027-01","Manufacturing energy software"),
+ ]},at);
+ const ids=(country:string)=>rank(items,{...demo,companyCountry:country},Date.parse(at)).map(row=>row.id).sort();
+ assert.deepEqual(ids("GB"),["eu-HORIZON-CL4-2027-01","eu-HORIZON-EIC-2027-ACCELERATOR-01"]);
+ for(const code of ["NO","IS","CH","IL","TR","UA"]) assert.equal(ids(code).length,3);
+ assert.deepEqual(ids("CA"),["eu-HORIZON-CL4-2027-01"]);
+ assert.deepEqual(ids("US"),[]);
+ assert.equal(ids("FR").length,4);
+});
 test("competitive calls retain their own identity, URL, deadline and status",()=>{
  const row=(id:string,status:string,start:string)=>({reference:id+"COMPETITIVE_CALLen",
   url:`https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/opportunities/competitive-calls-cs/${id}`,

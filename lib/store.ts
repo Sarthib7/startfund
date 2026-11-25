@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { enrichUs, searchEu, searchUs, sources, type Source } from "./sources";
-import { byListingStatus, catalogMatch, catalogWords, listingStatus, profileQueries, relevantEvidence, rank, shortlist, type Opportunity, type Profile, type Radar } from "./domain";
+import { enrichUs, hasCompleteTenderCpv, searchEu, searchTed, searchUs, sources, type Source } from "./sources";
+import { byListingStatus, catalogMatch, catalogWords, euCountryCodes, listingStatus, profileLocations, profileQueries, relevantEvidence, rank, shortlist, type Opportunity, type Profile, type Radar } from "./domain";
 import { factSources, rights, searchCordis, searchNsf, searchUkri, type Fact, type FactSource } from "./facts";
 import { reader, type Snapshot } from "./transport";
 import { perkScore } from "./programs";
@@ -30,7 +30,9 @@ export async function sourceRows(name: Source) {
     const stored: Opportunity[] = previous ? JSON.parse(previous.data) : [];
     const current = name==="Hacker News" ? stored.every(o=>o.kind==="Market signal") :
       name==="EU Funding & Tenders" || name==="Grants.gov" ? stored.every(o=>o.status) :
-      name==="Accelerator directory" ? stored.every(o=>o.kind!=="Growth") : true;
+      name==="Accelerator directory" ? stored.every(o=>o.kind!=="Growth") :
+      name==="Government program links" ? stored.every(o=>o.focusTopics) :
+      name==="TED" ? stored.every(hasCompleteTenderCpv) : true;
     if (previous && current && Date.now()-Date.parse(previous.scanned) < ttl) return {items: stored};
     const at = new Date().toISOString();
     try {
@@ -52,7 +54,8 @@ export async function sourceRows(name: Source) {
       await store.batch(writes);
       return {items};
     } catch {
-      return {items:stored, warning: `${name}: ${previous ? "showing cached listings" : "temporarily unavailable"}`};
+      const items=name==="TED" ? stored.filter(hasCompleteTenderCpv) : stored;
+      return {items, warning: `${name}: ${previous && (name!=="TED" || items.length) ? "showing cached listings" : "temporarily unavailable"}`};
     }
   })();
   inFlight.set(name,task);
@@ -120,11 +123,32 @@ function topicalRows<T>(name:Source|FactSource,key:string,load:(read:ReturnType<
   activeQueries.set(id,result);
   return result;
 }
-function mergeOpportunities(rows:Opportunity[]) {
+const ukCompetitionTitle=(title:string)=>title.toLowerCase().replace(/&/g," and ").match(/[\p{L}\p{N}]+/gu)?.join(" ");
+const ukCompetitionUrl=(url:string)=>{
+  const parsed=URL.parse(url);
+  return parsed && parsed.hostname.replace(/^www\./,"")+parsed.pathname.replace(/\/+$/,"");
+};
+export function mergeOpportunities(rows:Opportunity[]) {
   const byId=new Map<string,Opportunity>();
   for(const row of rows){
     const earlier=byId.get(row.id);
     if(!earlier || row.description || (!earlier.description&&row.fetchedAt>earlier.fetchedAt)) byId.set(row.id,row);
+  }
+  const innovate=[...byId.values()].filter(row=>row.source==="Innovate UK");
+  for(const row of byId.values()){
+    if(row.source!=="UK Find a Grant") continue;
+    const url=ukCompetitionUrl(row.url),title=ukCompetitionTitle(row.title),day=row.deadline?.slice(0,10);
+    const exact=url && innovate.find(candidate=>ukCompetitionUrl(candidate.url)===url);
+    const similar=title && day ? innovate.filter(candidate=>ukCompetitionTitle(candidate.title)===title &&
+      candidate.deadline?.slice(0,10)===day) : [];
+    const match=exact || (similar.length===1 ? similar[0] : undefined);
+    if(!match) continue;
+    const current=byId.get(match.id)!;
+    const timed=row.deadline?.includes("T") && row.deadline.slice(0,10)===current.deadline?.slice(0,10);
+    byId.set(match.id,{...current,description:current.description??row.description,amount:current.amount??row.amount,
+      ...(!current.subdivisions?.length && row.subdivisions?.length ? {subdivisions:row.subdivisions}:{}),
+      ...(timed?{deadline:row.deadline,status:row.status}:{})});
+    byId.delete(row.id);
   }
   return [...byId.values()];
 }
@@ -135,7 +159,7 @@ function opportunityText(o:Opportunity){
 }
 export async function catalog(query:{q?:string; source?:string; limit?:number}={}){
   const term=query.q?.trim()??"", queryTerm=term.toLowerCase().match(/[a-z0-9][a-z0-9-]*/g)?.slice(0,6).join(" ")??"";
-  const topical = queryTerm && !/^(?:accelerator|grant|vc|perks|growth|nsf)$/i.test(queryTerm) ?
+  const topical = queryTerm && !/^(?:accelerator|grant|tender|vc|perks|growth|nsf)$/i.test(queryTerm) ?
     [...(!query.source||query.source==="Grants.gov"?[queriedUs(queryTerm)]:[]),...(!query.source||query.source==="EU Funding & Tenders"?[queriedEu(queryTerm)]:[])] : [];
   const [general,factWarnings,extra]=await Promise.all([
     Promise.all((Object.keys(sources) as Source[]).filter(n=>!query.source||n===query.source).map(sourceRows)),
@@ -162,27 +186,31 @@ export async function catalog(query:{q?:string; source?:string; limit?:number}={
 }
 export async function radar(p: Profile):Promise<Radar>{
   const terms=p.needs.includes("Grant") ? profileQueries(p) : [];
+  const tenderCountries=p.needs.includes("Tender") ? profileLocations(p).countries.filter(c=>Object.hasOwn(euCountryCodes,c)) : [];
   const evidenceTerms=terms.slice(0,2);
   const historical=evidenceTerms.flatMap(q=>[
     topicalRows("NSF Awards",q,(read,at)=>searchNsf(read,at,q)),
     topicalRows("CORDIS",q,(read,at)=>searchCordis(read,at,q)),
     topicalRows("UKRI GtR",q,(read,at)=>searchUkri(read,at,q).catch(()=>searchUkri(read,at,q.split(" ").at(-1)))),
   ]);
-  const [general,us,eu,facts]=await Promise.all([
-    Promise.all((Object.keys(sources) as Source[]).filter(name=>name!=="Hacker News").map(sourceRows)),
-    Promise.all(terms.map(queriedUs)),Promise.all(terms.map(queriedEu)),Promise.all(historical),
+  const [general,us,eu,tenders,facts]=await Promise.all([
+    Promise.all((Object.keys(sources) as Source[]).filter(name=>name!=="Hacker News" && name!=="TED").map(sourceRows)),
+    Promise.all(terms.map(queriedUs)),Promise.all(terms.map(queriedEu)),
+    Promise.all(tenderCountries.map(country=>topicalRows("TED","procedure-and-lots:"+country,(read,at)=>searchTed(at,read,[country])))),
+    Promise.all(historical),
   ]);
   const detailed=new Set(general.flatMap(result=>result.items.filter(o=>o.source==="Grants.gov"&&(o.description||o.eligibility)).map(o=>o.id)));
   const usRows=mergeOpportunities(us.flatMap(result=>result.items.filter(o=>!detailed.has(o.id)&&!o.prerequisites?.length && !/clinical trials?|\bNIH\b/i.test(o.title)).slice(0,5)));
   const enrich=await Promise.all(usRows.slice(0,12).map(row=>topicalRows("Grants.gov",row.id,async read=>[await enrichUs(row,read)])));
-  const all=mergeOpportunities([...general,...us,...eu,...enrich].flatMap(x=>x.items));
-  const warnings=[...new Set([...general,...us,...eu,...facts].flatMap(r=>r.warning?[r.warning]:[]))];
+  const all=mergeOpportunities([...general,...us,...eu,...tenders,...enrich].flatMap(x=>x.items));
+  const warnings=[...new Set([...general,...us,...eu,...tenders,...facts].flatMap(r=>r.warning?[r.warning]:[]))];
   return {matches:shortlist(rank(all,p)),evidence:relevantEvidence(facts.flatMap(r=>r.items),p).slice(0,8),warnings,scannedAt:new Date().toISOString()};
 }
 const pendingScans=new Map<string,Promise<Radar>>();
 export async function completedRadar(p:Profile,scope:string,load=radar):Promise<Radar>{
   const key=createHash("sha256").update(JSON.stringify([
     scope,p.sector,p.description,p.stage,p.region,[...new Set(p.needs)].sort(),p.priorNihAward===true,p.plansClinicalTrial===true,
+    p.companyCountry,p.companySubdivision,p.developerCountries??[],p.developerSubdivisions??[],
   ])).digest("hex");
   const pending=pendingScans.get(key);
   if(pending)return pending;
@@ -209,7 +237,10 @@ export async function builderBundle(profile?:Profile) {
 }
 export async function saved(id:string){
   const row=(await (await db()).all("SELECT data,digest FROM profiles WHERE id=?",id))[0] as {data:string;digest:string|null}|undefined;
-  return row ? {profile:JSON.parse(row.data) as Profile,digest:row.digest ? JSON.parse(row.digest) as Radar : null} : null;
+  if(!row) return null;
+  const digest=row.digest ? JSON.parse(row.digest) as Radar : null;
+  if(digest) digest.matches=digest.matches.filter(o=>o.source!=="TED" || hasCompleteTenderCpv(o));
+  return {profile:JSON.parse(row.data) as Profile,digest};
 }
 export async function save(id:string,p:Profile,digest:Radar){
   await (await db()).run("INSERT INTO profiles (id,data,digest,updated) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,digest=excluded.digest,updated=excluded.updated",id,JSON.stringify(p),JSON.stringify(digest),new Date(Date.now()).toISOString());

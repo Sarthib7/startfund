@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { kinds, listingStatus, regions, type Profile, type Radar, type Match, type Opportunity } from "../lib/domain";
+import { kinds, listingStatus, opportunityLocation, regions, selectProfileRegion, type Profile, type Radar, type Match, type Opportunity } from "../lib/domain";
 import { digestHtml } from "../lib/digest";
 
 type Draft={why:string;subject:string;body:string;mode:string};
@@ -10,14 +10,16 @@ function requestError(res:Response,data:{error?:string;pricing?:string},fallback
  const message=data.error??fallback;
  return res.status===429 ? new UsageLimitError(message+(data.pricing?" Pro is coming soon.":"")) : new Error(message);
 }
-const names={Grant:"Grants",Accelerator:"Accelerators",VC:"Investors",Perks:"Free builder bundle",Growth:"Growth"} as const;
+const names={Grant:"Grants",Tender:"Tenders",Accelerator:"Accelerators",VC:"Investors",Perks:"Free builder bundle",Growth:"Growth"} as const;
 const formatDate=(value:string)=>new Intl.DateTimeFormat("en",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"}).format(new Date(value));
 const money=(value:number,m:Match)=>new Intl.NumberFormat("en",{style:"currency",currency:m.currency,maximumFractionDigits:0}).format(value);
 const dueLabel=(m:Match)=>m.noticeExpires?"Next due":listingStatus(m)==="Late applications"?"On-time deadline":"Due";
-const initialClean=(p:Profile)=>({...p,name:"",description:"",sector:"",email:"",priorNihAward:undefined,plansClinicalTrial:undefined});
+const initialClean=(p:Profile)=>selectProfileRegion({...p,name:"",description:"",sector:"",email:"",companyCountry:undefined,developerCountries:undefined,companySubdivision:undefined,developerSubdivisions:undefined,priorNihAward:undefined,plansClinicalTrial:undefined});
 
 export default function Dashboard({initialProfile,initialRadar,initialSample}:{initialProfile:Profile;initialRadar:Radar;initialSample:boolean}){
  const [profile,setProfile]=useState(initialProfile),[saved,setSaved]=useState(initialProfile),[radar,setRadar]=useState(initialRadar);
+ const [teamCountries,setTeamCountries]=useState(initialProfile.developerCountries?.join(", ")??"");
+ const [teamSubdivisions,setTeamSubdivisions]=useState(initialProfile.developerSubdivisions?.join(", ")??"");
  const [sample,setSample]=useState(initialSample),[edit,setEdit]=useState(false),[confirmation,setConfirmation]=useState(false);
  const [pending,setPending]=useState(false),[error,setError]=useState(""),[filter,setFilter]=useState<string>("All");
  const [bundle,setBundle]=useState<Opportunity[]|null>(null);
@@ -29,6 +31,7 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
  const lastListing=useRef<Match|null>(null);
  const setupRef=useRef<HTMLElement>(null);
  const missingFields=[...(!profile.description.trim()?["description"]:[]),...(!profile.sector.trim()?["sector"]:[])];
+ const automaticProfile=selectProfileRegion(profile);
  const scrollTo=(element:HTMLElement|null)=>{element?.scrollIntoView({block:"start",behavior:"smooth"});element?.focus({preventScroll:true});};
  function editField(name:string){
   setEdit(true);
@@ -53,9 +56,10 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
  async function scan(event?:FormEvent){
   event?.preventDefault();setPending(true);setError("");
   try{
-   const res=await fetch("/api/radar",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(profile)});
+   const input={...(profile.regionExplicit?profile:automaticProfile),developerCountries:teamCountries.split(/[\s,]+/).filter(Boolean),developerSubdivisions:teamSubdivisions.split(/[\s,]+/).filter(Boolean)};
+   const res=await fetch("/api/radar",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
    const data=await res.json();if(!res.ok)throw requestError(res,data,"Scan unavailable.");
-   setSaved(profile);setRadar(data);setFilter("All");setBundle(null);setSelected(null);setSample(false);setConfirmation(false);setEdit(false);
+   setSaved(input);setRadar(data);setFilter("All");setBundle(null);setSelected(null);setSample(false);setConfirmation(false);setEdit(false);
    requestAnimationFrame(()=>scrollTo(resultsRef.current));
   }catch(e){setError(e instanceof Error?e.message:"Scan unavailable.");}
   finally{setPending(false);}
@@ -85,11 +89,11 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
     const reply=await res.json();
     if(res.status===429)throw requestError(res,reply,"Company lookup unavailable.");
     if(reply.profile){
-     setProfile(reply.profile);setConfirmation(true);setEdit(!reply.profile.sector||!reply.profile.description);
+     setProfile(reply.profile);setTeamCountries("");setTeamSubdivisions("");setConfirmation(true);setEdit(!reply.profile.sector||!reply.profile.description);
      answer="I found these details on the company website. Review them before scanning.";
     }else{setEdit(true);answer=reply.message??reply.error??"Couldn’t read the website. Enter the company details below.";}
    }else{
-    setProfile({...initialClean(profile),name:question.slice(0,80)});setEdit(true);setConfirmation(false);
+    setProfile({...initialClean(profile),name:question.slice(0,80)});setTeamCountries("");setTeamSubdivisions("");setEdit(true);setConfirmation(false);
     answer="Share the company’s website so I can read it, or enter a short description and sector below.";
    }
   }catch(e){answer=e instanceof UsageLimitError?e.message:"I couldn’t complete that request. Try again or enter your company details.";}
@@ -115,12 +119,12 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
  return <div className="shell">
   <header><Link href="/" className="brand"><span aria-hidden>◎</span> Startfund</Link><span className="topline">FUNDING RADAR</span><Link className="secondary nav-link" href="/catalog">Funding catalog ↗</Link><button className="secondary" onClick={()=>setDigest(!digest)} aria-expanded={digest}>{digest?"Close digest":"Weekly digest ↗"}</button></header>
   <main>
-   <div className="hero"><p className="eyebrow"><span className="live"/> STARTUP INTELLIGENCE</p><h1>Your funding radar<span>.</span></h1><p>Find grants, investors, and free tools for your startup.</p></div>
+   <div className="hero"><p className="eyebrow"><span className="live"/> STARTUP INTELLIGENCE</p><h1>Your funding radar<span>.</span></h1><p>Find grants, tenders, investors, and free tools for your startup.</p></div>
    <section className="panel intake" aria-label="Funding assistant">
     <form onSubmit={ask}><label htmlFor="company">What’s your company? <span className="muted">(name or website)</span></label><div className="ask"><input id="company" ref={companyRef} required maxLength={240} value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="Company website or a follow-up question"/><button className="primary" disabled={looking}>{looking?"Working…":"Ask →"}</button></div></form>
     {turns.length>0&&<div className="turns" aria-live="polite">{turns.map((turn,i)=><p key={i}><strong>{turn.question}</strong><br/>{turn.answer}</p>)}</div>}
-    <div className="intake-actions">{sample&&<span className="badge">Sample: {initialProfile.name}</span>}<button className="secondary" onClick={()=>setEdit(!edit)}>{edit?"Hide details":"Edit details"}</button><button className="secondary" onClick={()=>{setProfile(initialClean(initialProfile));setConfirmation(false);setEdit(true);}}>Clear</button></div>
-    {confirmation&&<div className="profile-confirm"><div className="intake-actions">{[profile.name,profile.sector,regions[profile.region],profile.stage].filter(Boolean).map((value,i)=><button key={i} className="secondary" onClick={()=>setEdit(true)}>{value}</button>)}</div><p>{profile.description}</p>{missingFields.length?<button className="secondary" onClick={()=>editField(missingFields[0])}>Add {missingFields.map(field=>"a "+field).join(" and ")} to scan</button>:<button className="primary" disabled={pending} onClick={()=>scan()}>{pending?"Scanning…":"Confirm and scan →"}</button>}</div>}
+    <div className="intake-actions">{sample&&<span className="badge">Sample: {initialProfile.name}</span>}<button className="secondary" onClick={()=>setEdit(!edit)}>{edit?"Hide details":"Edit details"}</button><button className="secondary" onClick={()=>{setProfile(initialClean(initialProfile));setTeamCountries("");setTeamSubdivisions("");setConfirmation(false);setEdit(true);}}>Clear</button></div>
+    {confirmation&&<div className="profile-confirm"><div className="intake-actions">{[profile.name,profile.sector,profile.companyCountry??regions[profile.region],profile.stage].filter(Boolean).map((value,i)=><button key={i} className="secondary" onClick={()=>setEdit(true)}>{value}</button>)}</div><p>{profile.description}</p>{missingFields.length?<button className="secondary" onClick={()=>editField(missingFields[0])}>Add {missingFields.map(field=>"a "+field).join(" and ")} to scan</button>:<button className="primary" disabled={pending} onClick={()=>scan()}>{pending?"Scanning…":"Confirm and scan →"}</button>}</div>}
     {error&&!edit&&<p className="error" role="alert">{error}</p>}
    </section>
    <div className={edit?"workspace":"workspace single"}>
@@ -129,7 +133,11 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
      <label>Startup<input required maxLength={80} value={profile.name} onChange={e=>setProfile({...profile,name:e.target.value})}/></label>
      <label>What you do<textarea name="description" required rows={3} maxLength={400} value={profile.description} onChange={e=>setProfile({...profile,description:e.target.value})}/></label>
      <div className="cols"><label>Stage<select value={profile.stage} onChange={e=>setProfile({...profile,stage:e.target.value as Profile["stage"]})}>{["Idea","Pre-seed","Seed","Growth","Not sure"].map(x=><option key={x}>{x}</option>)}</select></label>
-     <label>Region<select value={profile.region} onChange={e=>setProfile({...profile,region:e.target.value as Profile["region"]})}>{Object.entries(regions).map(([code,label])=><option value={code} key={code}>{label}</option>)}</select></label></div>
+     <label>Region fallback {!profile.regionExplicit&&<span className="muted">(auto)</span>}<select value={profile.regionExplicit?profile.region:""} onChange={e=>setProfile(selectProfileRegion(profile,(e.target.value||undefined) as Profile["region"]|undefined))}><optgroup label="Automatic"><option value="">{regions[automaticProfile.region]}</option></optgroup><optgroup label="Set manually">{Object.entries(regions).map(([code,label])=><option value={code} key={code}>{label}</option>)}</optgroup></select></label></div>
+     <label>Company country code <span className="muted">(optional)</span><input maxLength={2} pattern="[A-Za-z]{2}" placeholder="e.g. DE" value={profile.companyCountry??""} onChange={e=>setProfile({...profile,companyCountry:e.target.value.toUpperCase()||undefined})}/></label>
+     <label>Developer country codes <span className="muted">(optional, up to 8)</span><input maxLength={40} pattern="[A-Za-z]{2}([, ]+[A-Za-z]{2}){0,7}[, ]*" placeholder="e.g. FR, ES" value={teamCountries} onChange={e=>setTeamCountries(e.target.value.toUpperCase())}/></label>
+     <label>Company state or region code <span className="muted">(optional)</span><input maxLength={6} pattern="[A-Za-z]{2}-[A-Za-z0-9]{1,3}" placeholder="e.g. US-CA" value={profile.companySubdivision??""} onChange={e=>setProfile({...profile,companySubdivision:e.target.value.toUpperCase()||undefined})}/></label>
+     <label>Developer state or region codes <span className="muted">(optional, up to 8)</span><input maxLength={64} placeholder="e.g. GB-SCT, IN-KA" value={teamSubdivisions} onChange={e=>setTeamSubdivisions(e.target.value.toUpperCase())}/></label>
      <label>Sector<input name="sector" required maxLength={80} value={profile.sector} onChange={e=>setProfile({...profile,sector:e.target.value})}/></label>
      <fieldset><legend>Looking for</legend><div className="choices">{kinds.map(x=><label className="chip" key={x}><input type="checkbox" checked={profile.needs.includes(x)} onChange={e=>setProfile({...profile,needs:e.target.checked?[...profile.needs,x]:profile.needs.filter(n=>n!==x)})}/>{names[x]}</label>)}</div></fieldset>
      {/biotech|medical|health/i.test(profile.sector)&&<fieldset><legend>NIH prerequisites</legend><label className="chip"><input type="checkbox" checked={profile.priorNihAward===true} onChange={e=>setProfile({...profile,priorNihAward:e.target.checked})}/>Prior NIH SBIR/STTR award</label><label className="chip"><input type="checkbox" checked={profile.plansClinicalTrial===true} onChange={e=>setProfile({...profile,plansClinicalTrial:e.target.checked})}/>Planning a clinical trial</label></fieldset>}
@@ -150,7 +158,7 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
       <button className="rowtitle" onClick={()=>choose(m)}>{m.title} <span aria-hidden>›</span></button>
       <div className="rowmeta">{m.opensAt&&listingStatus(m)==="Forthcoming"&&<span>Opens {formatDate(m.opensAt)}</span>}
        {m.deadline&&<span>{dueLabel(m)} {formatDate(m.deadline)}</span>}{m.noticeExpires&&<span>Notice expires {formatDate(m.noticeExpires)}</span>}
-       {m.amount&&<span>Award ceiling {money(m.amount,m)}</span>}<a href={m.url} target="_blank" rel="noreferrer">Source ↗</a>
+       {m.amount&&<span>Award ceiling {money(m.amount,m)}</span>}{opportunityLocation(m)&&<span>{opportunityLocation(m)}</span>}<a href={m.url} target="_blank" rel="noreferrer">Source ↗</a>
       </div>{m.regionNote&&<small className="warning">{m.regionNote}</small>}{m.prerequisites?.length?<small className="warning"> {m.prerequisites.join(" · ")}</small>:null}
       {m.kind==="Perks"&&<p className="rowmeta">{m.eligibility}</p>}
      </div><div className="score"><b>{m.score}%</b><span>FIT</span></div></li>)}</ul>

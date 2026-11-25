@@ -131,6 +131,17 @@ test("completed scans coalesce and persist for the same ranking inputs and actor
  assert.equal(Number(row.n),1);
 });
 
+test("completed scans distinguish company and team locations within a region", async ()=>{
+ let loads=0;
+ const load=async()=>({matches:[],warnings:[],scannedAt:String(++loads)});
+ const base={...demo,region:"EU"} as const;
+ const profiles=[base,{...base,companyCountry:"FR"},{...base,companySubdivision:"FR-IDF"},
+  {...base,developerCountries:["NL"]},{...base,developerSubdivisions:["NL-NH"]}];
+ for(const [i,profile] of profiles.entries())
+  assert.equal((await completedRadar(profile,"regional",load)).scannedAt,String(i+1));
+ assert.equal((await completedRadar(profiles[3],"regional",load)).scannedAt,"4");
+});
+
 test("outbound fetch work is capped at eight concurrent requests",async()=>{
  let release!:()=>void, running=0, peak=0;
  const gate=new Promise<void>(r=>{release=r;});

@@ -6,7 +6,7 @@ export function reader(options:{contact?:string; lookUp?:(url:string)=>Snapshot|
  return async (url,init)=>{
   const headers=new Headers(init?.headers);
   if (!headers.has("accept")) headers.set("accept","application/json");
-  const html=headers.get("accept")==="text/html";
+  const text=["text/html","text/plain","application/rss+xml","application/xml","text/xml"].includes(headers.get("accept")??"");
   headers.set("user-agent",["Startfund/0.1", options.contact || "https://github.com/Sarthib7/startfund"].join(" "));
   const previous=(!init?.method || init.method==="GET") ? await options.lookUp?.(url) : undefined;
   if(previous?.etag) headers.set("if-none-match",previous.etag);
@@ -17,9 +17,9 @@ export function reader(options:{contact?:string; lookUp?:(url:string)=>Snapshot|
    if(!r.ok){await r.body?.cancel();throw new Error(`Source HTTP ${r.status}`);}
    return {r,original:await r.text()};
   });
-  if(original===null&&previous)return html ? previous.body : JSON.parse(previous.body);
+  if(original===null&&previous)return text ? previous.body : JSON.parse(previous.body);
   if(original===null)throw new Error("Source returned an empty cache response");
-  const parsed=html ? original : JSON.parse(original);
+  const parsed=text ? original : JSON.parse(original);
   let body=original;
   if(new URL(url).hostname==="api.grants.gov" && typeof parsed==="object" && parsed?.token){
     const {token:_token,...rest}=parsed;
