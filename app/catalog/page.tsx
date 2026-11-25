@@ -4,18 +4,21 @@ import { rights, type Fact } from "../../lib/facts";
 import { listingStatus } from "../../lib/domain";
 import { catalogOverview } from "../../lib/catalog-overview";
 import { Overview } from "./overview";
+import { SuggestOpportunity } from "../suggest-opportunity";
+import { communitySource } from "../../lib/suggestions";
 export const dynamic="force-dynamic";
 const format=(f:Fact)=>f.amount&&f.currency ? new Intl.NumberFormat("en",{style:"currency",currency:f.currency,maximumFractionDigits:0}).format(f.amount) : "—";
 export default async function FundingCatalog({searchParams}:{searchParams:Promise<{q?:string;source?:string}>}){
  const p=await searchParams;
  const q=typeof p.q==="string"?p.q.slice(0,120):"";
- const source=typeof p.source==="string"&&Object.hasOwn(rights,p.source)?p.source:undefined;
+ const source=typeof p.source==="string"&&(Object.hasOwn(rights,p.source)||p.source===communitySource)?p.source:undefined;
  const data=await catalog({q,source,limit:60});
  const groups=new Map<string,Fact[]>();
  for(const evidence of data.evidence)groups.set(evidence.entityId,[...(groups.get(evidence.entityId)??[]),evidence]);
  return <div className="shell"><header><Link href="/" className="brand"><span aria-hidden>◎</span> Startfund</Link><span className="topline">FUNDING CATALOG</span><Link className="secondary nav-link" href="/">Radar ↗</Link></header>
  <main><div className="hero catalog-hero"><div><p className="eyebrow"><span className="live"/> SOURCE-BACKED DATA</p><h1>Funding catalog<span>.</span></h1><p>Compare programs and public filing signals. Follow the evidence, not a reputation score.</p></div><svg aria-hidden="true" viewBox="0 0 208 112" className="catalog-radar"><g fill="none" stroke="currentColor"><path d="M13 92a91 91 0 0 1 182 0M39 92a65 65 0 0 1 130 0M65 92a39 39 0 0 1 78 0M91 92a13 13 0 0 1 26 0M13 92h182M104 92l65-64"/><path d="M104 92V9" strokeDasharray="3 5"/></g><g fill="currentColor"><circle cx="51" cy="53" r="4"/><circle cx="151" cy="45" r="5"/><circle cx="124" cy="77" r="3"/></g></svg></div>
- <form className="panel catalog-search"><label>Search<input name="q" placeholder="e.g. SBIR or accelerator" defaultValue={q} maxLength={120}/></label><label>Source<select name="source" defaultValue={source??""}><option value="">All sources</option>{Object.keys(rights).map(s=><option key={s}>{s}</option>)}</select></label><button className="primary">Search →</button></form>
+ <div className="action-strip"><SuggestOpportunity/></div>
+ <form className="panel catalog-search"><label>Search<input name="q" placeholder="e.g. SBIR or accelerator" defaultValue={q} maxLength={120}/></label><label>Source<select name="source" defaultValue={source??""}><option value="">All sources</option>{[...Object.keys(rights),communitySource].map(s=><option key={s}>{s}</option>)}</select></label><button className="primary">Search →</button></form>
  {data.warnings.some(value=>!value.startsWith("SEC EDGAR: set"))&&<p className="meta">{data.warnings.filter(value=>!value.startsWith("SEC EDGAR: set")).join(" · ")}</p>}
  <Overview data={catalogOverview(data.opportunities,new Date().toISOString())}/>
  <section className="panel detail"><div className="section-kicker">01 / MARKET MAP</div><h2>Programs &amp; filing entities</h2><p className="meta">Amounts are individual source records, not a lifetime total. An SEC filing does not verify legitimacy or typical checks.</p>

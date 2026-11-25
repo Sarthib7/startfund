@@ -9,11 +9,11 @@ export function Overview({data}:{data:ReturnType<typeof catalogOverview>}){
  const [group,setGroup]=useState<keyof typeof groups>("byRegion");
  const rows=data[group];
  return <section className="panel funding-overview" aria-labelledby="funding-overview">
-  <div className="overview-head"><div><h2 id="funding-overview">Catalog at a glance</h2><p className="meta">A snapshot of the listings shown below, not the whole funding market.</p></div>
+  <div className="overview-head"><div><div className="section-kicker">CATALOG INSIGHTS</div><h2 id="funding-overview">Catalog at a glance</h2><p className="meta">Counts reflect the listings in this view, not the whole funding market.</p></div>
    <dl className="overview-stats"><div><dt>Listings</dt><dd>{data.total}</dd></div><div><dt>Accepting applications</dt><dd>{data.open}</dd></div><div><dt>Open grants with amounts</dt><dd>{data.withAmount}</dd></div></dl>
   </div>
   <div className="overview-grid">
-   <div className="overview-mix"><div className="overview-subhead"><h3>Listing mix</h3><div className="overview-controls" role="group" aria-label="Group listings by">
+   <div className="overview-mix analytics-card"><div className="overview-subhead"><h3>Listing mix</h3><div className="overview-controls" role="group" aria-label="Group listings by">
     {(Object.keys(groups) as (keyof typeof groups)[]).map(key=><button key={key} type="button" aria-pressed={group===key} onClick={()=>setGroup(key)}>{groups[key]}</button>)}
    </div></div>
    {rows.length?<><div className="overview-chart" aria-hidden="true"><ResponsiveContainer width="100%" height={Math.max(154,rows.length*34)} minWidth={0}>
@@ -26,7 +26,7 @@ export function Overview({data}:{data:ReturnType<typeof catalogOverview>}){
    </ResponsiveContainer></div><ul className="overview-legend" aria-label={`Counts by ${groups[group].toLowerCase()}`}>{rows.map(row=><li key={row.label}>{row.label} <strong>{row.count}</strong></li>)}</ul></>:
     <p className="meta">No listings in this view. Try a different search or source.</p>}
    </div>
-   <div className="overview-timeline"><h3>Next deadlines</h3>
+   <div className="overview-timeline analytics-card"><h3>Next deadlines</h3>
     {data.deadlines.length?<ol>{data.deadlines.map(row=><li key={row.id}><time dateTime={row.date}>{dateFormat.format(new Date(row.date))}</time><div><a href={row.url} target="_blank" rel="noreferrer">{row.title}</a><small>{row.source}</small></div></li>)}</ol>:
      <p className="meta">No dated open calls in this view.</p>}
    </div>

@@ -1,9 +1,10 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { enrichUs, hasCompleteTenderCpv, searchEu, searchTed, searchUs, sources, type Source } from "./sources";
 import { byListingStatus, catalogMatch, catalogWords, euCountryCodes, listingStatus, profileLocations, profileQueries, relevantEvidence, rank, shortlist, type Opportunity, type Profile, type Radar } from "./domain";
 import { factSources, rights, searchCordis, searchNsf, searchUkri, type Fact, type FactSource } from "./facts";
 import { reader, type Snapshot } from "./transport";
 import { perkScore } from "./programs";
+import { approvedOpportunities, communityRevision, communitySource } from "./suggestions";
 
 import { db, type Statement } from "./database";
 
@@ -171,14 +172,15 @@ export async function catalog(query:{q?:string; source?:string; limit?:number}={
   const filter=(s:string)=>!query.source||query.source===s;
   const warnings=[...new Set([...general,...extra].flatMap(x=>x.warning?[x.warning]:[]).concat(factWarnings.filter((s):s is string=>!!s)))];
   const signalWords=[...new Set(catalogWords(term))];
-  const [evidence,signals]=await Promise.all([
+  const [evidence,signals,community]=await Promise.all([
     store.all("SELECT data FROM evidence WHERE (?1 IS NULL OR source=?1) ORDER BY rowid DESC",query.source??null),
     store.remote ? store.all(`SELECT json_remove(data,'$.searchText') AS data FROM signals WHERE (?1 IS NULL OR source=?1)${signalWords.map(()=> " AND instr(json_extract(data,'$.searchText'),?)>0").join("")} ORDER BY observed DESC LIMIT ?`,query.source??null,...signalWords.map(word=>" "+word+" "),limit) :
       store.all(`SELECT json_remove(data,'$.searchText') AS data FROM signals WHERE (?1 IS NULL OR source=?1)
        AND catalog_match(?2,json_extract(data,'$.title')) ORDER BY observed DESC LIMIT ?3`,query.source??null,term,limit),
+    filter(communitySource)?approvedOpportunities():Promise.resolve([]),
   ]);
   return {
-    opportunities:mergeOpportunities([...general,...extra].flatMap(x=>x.items)).filter(x=>!x.signal && (term || listingStatus(x)!=="Closed") && isMatch(opportunityText(x))).sort(byListingStatus).slice(0,limit),
+    opportunities:mergeOpportunities([...community,...[...general,...extra].flatMap(x=>x.items)]).filter(x=>!x.signal && (term || listingStatus(x)!=="Closed") && isMatch(opportunityText(x))).sort(byListingStatus).slice(0,limit),
     evidence:evidence.map(row=>JSON.parse(String(row.data)) as Fact).filter(x=>filter(x.source)&&isMatch([x.source,x.entity,x.title].join(" "))).sort((a,b)=>(b.observed??"").localeCompare(a.observed??"")).slice(0,limit),
     signals:signals.map(row=>JSON.parse(String(row.data)) as Signal),
     warnings,
@@ -193,16 +195,17 @@ export async function radar(p: Profile):Promise<Radar>{
     topicalRows("CORDIS",q,(read,at)=>searchCordis(read,at,q)),
     topicalRows("UKRI GtR",q,(read,at)=>searchUkri(read,at,q).catch(()=>searchUkri(read,at,q.split(" ").at(-1)))),
   ]);
-  const [general,us,eu,tenders,facts]=await Promise.all([
+  const [general,us,eu,tenders,facts,community]=await Promise.all([
     Promise.all((Object.keys(sources) as Source[]).filter(name=>name!=="Hacker News" && name!=="TED").map(sourceRows)),
     Promise.all(terms.map(queriedUs)),Promise.all(terms.map(queriedEu)),
     Promise.all(tenderCountries.map(country=>topicalRows("TED","procedure-and-lots:"+country,(read,at)=>searchTed(at,read,[country])))),
     Promise.all(historical),
+    approvedOpportunities(),
   ]);
   const detailed=new Set(general.flatMap(result=>result.items.filter(o=>o.source==="Grants.gov"&&(o.description||o.eligibility)).map(o=>o.id)));
   const usRows=mergeOpportunities(us.flatMap(result=>result.items.filter(o=>!detailed.has(o.id)&&!o.prerequisites?.length && !/clinical trials?|\bNIH\b/i.test(o.title)).slice(0,5)));
   const enrich=await Promise.all(usRows.slice(0,12).map(row=>topicalRows("Grants.gov",row.id,async read=>[await enrichUs(row,read)])));
-  const all=mergeOpportunities([...general,...us,...eu,...tenders,...enrich].flatMap(x=>x.items));
+  const all=mergeOpportunities([...community,...[...general,...us,...eu,...tenders,...enrich].flatMap(x=>x.items)]);
   const warnings=[...new Set([...general,...us,...eu,...tenders,...facts].flatMap(r=>r.warning?[r.warning]:[]))];
   return {matches:shortlist(rank(all,p)),evidence:relevantEvidence(facts.flatMap(r=>r.items),p).slice(0,8),warnings,scannedAt:new Date().toISOString()};
 }
@@ -211,6 +214,7 @@ export async function completedRadar(p:Profile,scope:string,load=radar):Promise<
   const key=createHash("sha256").update(JSON.stringify([
     scope,p.sector,p.description,p.stage,p.region,[...new Set(p.needs)].sort(),p.priorNihAward===true,p.plansClinicalTrial===true,
     p.companyCountry,p.companySubdivision,p.developerCountries??[],p.developerSubdivisions??[],
+    await communityRevision(),
   ])).digest("hex");
   const pending=pendingScans.get(key);
   if(pending)return pending;
@@ -236,11 +240,18 @@ export async function builderBundle(profile?:Profile) {
     .sort((a,b)=>perkScore(b,profile)-perkScore(a,profile));
 }
 export async function saved(id:string){
-  const row=(await (await db()).all("SELECT data,digest FROM profiles WHERE id=?",id))[0] as {data:string;digest:string|null}|undefined;
-  if(!row) return null;
-  const digest=row.digest ? JSON.parse(row.digest) as Radar : null;
-  if(digest) digest.matches=digest.matches.filter(o=>o.source!=="TED" || hasCompleteTenderCpv(o));
-  return {profile:JSON.parse(row.data) as Profile,digest};
+  const store=await db();
+  for(;;){
+    const row=(await store.all("SELECT data,digest FROM profiles WHERE id=?",id))[0] as {data:string;digest:string|null}|undefined;
+    if(!row) return null;
+    const digest=row.digest ? JSON.parse(row.digest) as Radar : null;
+    if(digest&&!digest.scanId){
+      digest.scanId=randomUUID();
+      if(!await store.run("UPDATE profiles SET digest=? WHERE id=? AND digest=?",JSON.stringify(digest),id,row.digest))continue;
+    }
+    if(digest) digest.matches=digest.matches.filter(o=>o.source!=="TED" || hasCompleteTenderCpv(o));
+    return {profile:JSON.parse(row.data) as Profile,digest};
+  }
 }
 export async function save(id:string,p:Profile,digest:Radar){
   await (await db()).run("INSERT INTO profiles (id,data,digest,updated) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,digest=excluded.digest,updated=excluded.updated",id,JSON.stringify(p),JSON.stringify(digest),new Date(Date.now()).toISOString());
@@ -266,13 +277,14 @@ export async function unsubscribeDigest(token:string) {
   return (await (await db()).run("DELETE FROM digest_subscriptions WHERE unsubscribe=?",token))>0;
 }
 export async function subscriptions(){
-  return (await (await db()).all(`SELECT p.id,p.data,p.updated,s.sent,s.email,s.unsubscribe FROM profiles p JOIN digest_subscriptions s
+  return (await (await db()).all(`SELECT p.id,p.data,p.updated,json_extract(p.digest,'$.scanId') AS scan_id,s.sent,s.email,s.unsubscribe FROM profiles p JOIN digest_subscriptions s
     ON p.id=s.profile_id WHERE s.confirmed IS NOT NULL`))
     .map(row=>({id:String(row.id),profile:JSON.parse(String(row.data)) as Profile,sent:row.sent ? String(row.sent) : null,
-      email:String(row.email),unsubscribe:String(row.unsubscribe),version:String(row.updated)}));
+      email:String(row.email),unsubscribe:String(row.unsubscribe),version:{updated:String(row.updated),scanId:typeof row.scan_id==="string"?row.scan_id:null}}));
 }
-export async function updateDigest(id:string,digest:Radar,version:string){
-  return (await (await db()).run("UPDATE profiles SET digest=? WHERE id=? AND updated=?",JSON.stringify(digest),id,version))>0;
+export async function updateDigest(id:string,digest:Radar,version:{updated:string;scanId:string|null}){
+  return (await (await db()).run("UPDATE profiles SET digest=? WHERE id=? AND updated=? AND json_extract(digest,'$.scanId') IS ?",
+    JSON.stringify({...digest,scanId:randomUUID()}),id,version.updated,version.scanId))>0;
 }
 export async function canDeliverDigest(id:string,unsubscribe:string){
   return Boolean((await (await db()).all("SELECT 1 FROM digest_subscriptions WHERE profile_id=? AND unsubscribe=? AND confirmed IS NOT NULL",id,unsubscribe))[0]);

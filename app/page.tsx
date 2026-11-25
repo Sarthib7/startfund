@@ -7,6 +7,6 @@ export default async function Home(){
  const id=(await cookies()).get("startfund-profile")?.value;
  const current=id ? await saved(id) : null;
  const profile=current?.profile ?? demo;
- const initialRadar=current?.digest?.evidence ? current.digest : await completedRadar(profile,current&&id?id:"demo");
- return <Dashboard initialProfile={profile} initialRadar={initialRadar} initialSample={!current} />;
+ const initialRadar=current?.digest?.scanId||current?.digest?.evidence ? current.digest : await completedRadar(profile,current&&id?id:"demo");
+ return <Dashboard initialProfile={profile} initialRadar={initialRadar} initialSample={!current} initialNow={new Date().toISOString()} />;
 }

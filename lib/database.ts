@@ -43,6 +43,9 @@ const schema=[
  "CREATE TABLE IF NOT EXISTS usage_limit_hits (day INTEGER NOT NULL, endpoint TEXT NOT NULL, hits INTEGER NOT NULL, PRIMARY KEY(day,endpoint))",
  "CREATE TABLE IF NOT EXISTS completed_scans (key TEXT PRIMARY KEY, expires INTEGER NOT NULL, data TEXT NOT NULL)",
  "CREATE INDEX IF NOT EXISTS completed_scans_expiry ON completed_scans(expires)",
+ "CREATE TABLE IF NOT EXISTS shared_scans (id TEXT PRIMARY KEY, data TEXT NOT NULL)",
+ "CREATE TABLE IF NOT EXISTS opportunity_suggestions (id TEXT PRIMARY KEY, status TEXT NOT NULL, created TEXT NOT NULL, reviewed TEXT, data TEXT NOT NULL)",
+ "CREATE INDEX IF NOT EXISTS suggestion_status ON opportunity_suggestions(status,created)",
 ];
 async function open():Promise<Database>{
  const url=process.env.TURSO_DATABASE_URL,authToken=process.env.TURSO_AUTH_TOKEN;

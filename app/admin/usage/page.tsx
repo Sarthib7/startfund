@@ -1,15 +1,14 @@
 import Link from "next/link";
 import {headers} from "next/headers";
 import {notFound} from "next/navigation";
-import {sameSecret,usageReport} from "../../../lib/usage";
+import {usageReport} from "../../../lib/usage";
+import {isAdmin} from "../../../lib/admin";
 
 export const dynamic="force-dynamic";
 export const metadata={title:"Usage — Startfund",robots:{index:false,follow:false}};
 
 export default async function UsagePage(){
- const token=process.env.RADAR_ADMIN_TOKEN;
- const auth=(await headers()).get("authorization")?.match(/^Bearer (.+)$/i)?.[1];
- if(!token||!auth||!sameSecret(auth,token))notFound();
+ if(!isAdmin(await headers()))notFound();
  const {days,endpoints,hits}=await usageReport();
  return <div className="shell">
   <header><Link href="/" className="brand"><span aria-hidden>◎</span> Startfund</Link><span className="topline">OPERATOR</span></header>
