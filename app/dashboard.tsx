@@ -65,7 +65,9 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
    }else if(/\bwhy\b/i.test(question)){
     const listing=radar.matches.find(m=>question.toLowerCase().includes(m.title.toLowerCase()))??lastListing.current??radar.matches[0];
     answer=listing?`${listing.title}: ${listing.reason}.`:"Run a scan first to see why a listing matched.";
-   }else if(/\b(?:perks|bundle|credits|free apis?)\b/i.test(question)&&(!question.includes(".")||/\s/.test(question))){
+   }else if(/\b(?:perks|bundle|credits|free apis?)\b/i.test(question)&&
+     (/^(?:what|where|which|how|can|could|do|are|is|show|find|list|tell|give)\b/i.test(question)||/\?$/.test(question)||
+     (!sample&&/^(?:perks|credits|builder bundle|free builder bundle|free apis?)$/i.test(question)))){
     const {email:_email,...bundleProfile}=saved;
     const res=await fetch("/api/assistant",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"builder_bundle",profile:bundleProfile})});
     if(!res.ok)throw new Error("Builder bundle unavailable.");
