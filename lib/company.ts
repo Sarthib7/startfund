@@ -8,6 +8,8 @@ const resolver=new Resolver({timeout:2000,tries:1});
 const denied=new BlockList();
 for(const [address,bits] of [["0.0.0.0",8],["10.0.0.0",8],["100.64.0.0",10],["127.0.0.0",8],["169.254.0.0",16],["172.16.0.0",12],["192.0.0.0",24],["192.0.2.0",24],["192.168.0.0",16],["198.18.0.0",15],["198.51.100.0",24],["203.0.113.0",24],["224.0.0.0",3]] as const) denied.addSubnet(address,bits,"ipv4");
 const userAgent="Startfund";
+const maxRobotsBytes=512*1024;
+const maxRobotsRules=512;
 export function companyUrl(input:string) {
   let url:URL;
   try {url=new URL(input.includes("://")?input:`https://${input}`);} catch{return null;}
@@ -59,7 +61,7 @@ export async function readCompanyPages(start:URL,read=webPage) {
   }
   async function check(url:URL){
     if(!policies.has(url.origin)){
-      const {page}=await follow(new URL("/robots.txt",url),640_000);
+      const {page}=await follow(new URL("/robots.txt",url),maxRobotsBytes);
       if(!ok(page.status)&&![404,410].includes(page.status))throw new Error("Website does not allow automated reading");
       policies.set(url.origin,/^\s*(?:<!doctype html|<html\b)/i.test(page.body)?"":page.body);
     }
@@ -71,8 +73,43 @@ export async function readCompanyPages(start:URL,read=webPage) {
   const about=aboutPath ? await follow(new URL(aboutPath,url),250_000,check).then(({page})=>ok(page.status)?page.body:"").catch(()=>"") : "";
   return {home:home.body,about,url};
 }
+function findLiteral(path:string,part:string,start:number,end:number) {
+  const links=new Uint32Array(part.length);
+  for(let i=1,prefix=0;i<part.length;i++){
+    while(prefix && part[i]!==part[prefix])prefix=links[prefix-1];
+    if(part[i]===part[prefix])prefix++;
+    links[i]=prefix;
+  }
+  for(let i=start,matched=0;i<end;i++){
+    while(matched && path[i]!==part[matched])matched=links[matched-1];
+    if(path[i]===part[matched] && ++matched===part.length)return i+1;
+  }
+  return -1;
+}
+function robotsMatch(rule:string,path:string) {
+  const anchored=rule.endsWith("$");
+  const parts=(anchored?rule.slice(0,-1):rule).split("*");
+  const first=parts[0];
+  if(!path.startsWith(first))return false;
+  if(parts.length===1)return !anchored||path.length===first.length;
+  let start=first.length,end=path.length;
+  if(anchored){
+    const last=parts.pop()!;
+    if(!path.endsWith(last))return false;
+    end-=last.length;
+    if(end<start)return false;
+  }
+  for(let i=1;i<parts.length;i++){
+    if(!parts[i])continue;
+    start=findLiteral(path,parts[i],start,end);
+    if(start<0)return false;
+  }
+  return true;
+}
 export function robotsAllows(robots:string,path:string) {
+  if(Buffer.byteLength(robots)>maxRobotsBytes)return false;
   const groups:{agents:string[];rules:{allow:boolean;path:string}[]}[]=[];
+  let rules=0;
   for(const row of robots.split(/\r?\n/)){
     const value=row.replace(/#.*/,"").trim().match(/^(user-agent|disallow|allow)\s*:\s*(.*)$/i);
     if(!value) continue;
@@ -81,16 +118,19 @@ export function robotsAllows(robots:string,path:string) {
     if(field==="user-agent"){
       if(last && !last.rules.length) last.agents.push(argument.toLowerCase());
       else groups.push({agents:[argument.toLowerCase()],rules:[]});
-    }else if(last && argument.startsWith("/")) last.rules.push({allow:field==="allow",path:argument});
+    }else if(last && argument.startsWith("/")){
+      if(++rules>maxRobotsRules)return false;
+      last.rules.push({allow:field==="allow",path:argument});
+    }
   }
   const named=groups.filter(g=>g.agents.includes(userAgent.toLowerCase()));
   const candidates=named.length?named:groups.filter(g=>g.agents.includes("*"));
-  const match=candidates.flatMap(g=>g.rules).filter(rule=>{
-    const end=rule.path.endsWith("$");
-    const pattern=(end?rule.path.slice(0,-1):rule.path).replace(/[\\^$+?.()|[\]{}]/g,"\\$&").replaceAll("*",".*");
-    return new RegExp("^"+pattern+(end?"$":"")).test(path);
-  }).sort((a,b)=>b.path.length-a.path.length || Number(b.allow)-Number(a.allow))[0];
-  return match?.allow??true;
+  let best:{allow:boolean;path:string}|undefined;
+  for(const {rules} of candidates)for(const rule of rules){
+    if(best&&(best.path.length>rule.path.length||(best.path.length===rule.path.length&&best.allow)))continue;
+    if(robotsMatch(rule.path,path))best=rule;
+  }
+  return best?.allow??true;
 }
 function metadata(html:string,keys:string[]) {
   for(const tag of html.match(/<meta\b[^>]+>/gi)??[]){

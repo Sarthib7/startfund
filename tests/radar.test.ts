@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { catalogMatch, demo, profileQueries, rank, shortlist, template, type Opportunity } from "../lib/domain";
 import { digestHtml } from "../lib/digest";
-import { parseEu, parseHn, parseInnovateUk, parseUs, sources } from "../lib/sources";
+import { parseEu, parseHn, parseInnovateUk, parseUs, searchUs, sources } from "../lib/sources";
 import { cordisFacts, nsfFacts, secFacts, ukriFact, ycFacts } from "../lib/facts";
 import { curatedProgramRows } from "../lib/programs";
 import { catalogOverview } from "../lib/catalog-overview";
@@ -41,17 +41,51 @@ test("grant evidence matches core sectors, not disbursements, clinical labels or
  assert.ok(restricted.score<30);
  assert.match(restricted.reason,/Applicant type is restricted/);
 });
-test("Grants.gov normalizes rolling and stale notices and decodes title entities",()=>{
- const [rolling,stale,expired]=parseUs({errorcode:0,data:{oppHits:[
+test("heat-pump profiles keep broader clean-energy grants without the core-topic boost",()=>{
+ const nsf=curatedProgramRows(at).find(row=>row.id==="nsf-seed")!;
+ const core={...grant,id:"heat-pump",region:"DE" as const,title:"Industrial heat pump pilot"};
+ for(const sector of ["Climate hardware","Clean energy"]){
+  const profile={...demo,region:"DE" as const,sector,description:"Heat pumps for industrial process heat and decarbonization."};
+  const matches=shortlist(rank([nsf,core],profile,Date.parse(at)));
+  assert.deepEqual(matches.map(row=>row.id),["heat-pump","nsf-seed"]);
+  assert.ok(matches[1].matchedTerms?.includes("clean energy"));
+  assert.ok(matches[1].score<=49);
+ }
+});
+test("Grants.gov uses close and archive evidence, not posting age, and decodes title entities",()=>{
+ const [rolling,undated,expired,archived,archiveDate]=parseUs({errorcode:0,data:{oppHits:[
   {id:"41",title:"Law &amp; Science &ndash; rolling",closeDate:"10/15/2076"},
   {id:"42",title:"EONS 2018",openDate:" 02/22/2018 "},
   {id:"43",title:"Expired",closeDate:"05/22/2018"},
+  {id:"44",title:"Archived",oppStatus:"archived"},
+  {id:"45",title:"Archive date passed",archiveDate:"05/22/2018",oppStatus:"posted"},
  ]}},at);
  assert.equal(rolling.title,"Law & Science – rolling");
  assert.equal(rolling.deadline,null);
  assert.equal(rolling.status,"Rolling");
- assert.equal(stale.status,"Closed");
+ assert.equal(undated.postedAt,"2018-02-22");
+ assert.equal(undated.status,"Rolling");
  assert.equal(expired.status,"Closed");
+ assert.equal(archived.status,"Closed");
+ assert.equal(archiveDate.status,"Closed");
+});
+test("Grants.gov checks old undated search results for actual proposal close dates",async()=>{
+ const detailRequests:number[]=[];
+ const rows=await searchUs(at,async (url,init)=>{
+  if(url.endsWith("/search2"))return {errorcode:0,data:{oppHits:[
+   ...Array.from({length:8},(_,i)=>({id:String(100+i),title:"Current notice",closeDate:"12/01/2026"})),
+   {id:"300997",title:"EONS 2018",openDate:"02/22/2018",closeDate:"",oppStatus:"posted"},
+   {id:"300998",title:"Undated award",openDate:"04/24/2018",closeDate:"",oppStatus:"posted"},
+  ]}};
+  const {opportunityId}=JSON.parse(String(init?.body));
+  detailRequests.push(opportunityId);
+  return {data:{ost:"POSTED",synopsis:{awardCeiling:null,awardFloor:null,estimatedFunding:null,responseDateDesc:opportunityId===300997?
+    "Notice of Intent Due: March 23, 2018; Proposals Due: May 22, 2018 11:59 PM EST":undefined}}};
+ },"biotechnology");
+ assert.deepEqual(detailRequests,[300997,300998]);
+ assert.equal(rows[8].status,"Closed");
+ assert.equal(rows[8].deadline,"2018-05-22");
+ assert.equal(rows[9].status,"Rolling");
 });
 test("US grants validate dates, URLs, and response status",()=>{
  assert.equal(grant.deadline,"2026-12-02");

@@ -95,15 +95,19 @@ const grantTopic = /^(?:climate|energy|electricity|manufactur\w*|decarboni[sz]\w
 const fintech = /\b(?:fintech|financial technolog\w*|bookkeeping|accounting (?:software|tools?|automation|platforms?)|cash[ -]?flow (?:forecast\w*|management|analysis)|open banking|(?:digital|electronic|mobile|instant|cross[- ]border) payments?|payment (?:systems?|platforms?|processing)|finance teams?|financial ERP)\b/i;
 const trialLabel = /\b(?:clinical trials?|CT)\s*(?:[-:–]\s*)?(?:optional|required|not allowed|not permitted)\b/gi;
 const thermal = /\b(?:heat[- ]pumps?|(?:industrial )?process heat|industrial heating|thermal decarboni[sz]\w*|decarboni[sz]\w* (?:industrial )?(?:process )?heat)\b/i;
+const industrialDecarbonization = /\bindustrial decarboni[sz]\w*\b/i;
 function grantTerms(o:Opportunity,p:Profile,profileText:string,words:Map<string,string>,phrases:string[]) {
   const scope=(o.title+" "+(o.description??"")).replace(trialLabel," ");
   const thematic=new Map([...words].filter(([word])=>!genericGrantWords.has(word)));
   if(fintech.test(profileText))return [...new Set((scope.match(new RegExp(fintech.source,"gi"))??[]).map(term=>term.toLowerCase()))];
-  if(thermal.test(profileText)){
-    const match=scope.match(thermal)?.[0]??scope.match(/\bindustrial decarboni[sz]\w*\b/i)?.[0];
-    return match?[match.toLowerCase()]:[];
-  }
   const sector=new Map([...keywords(p.sector)].filter(word=>thematic.has(word)).map(word=>[word,thematic.get(word)!]));
+  if(thermal.test(profileText)){
+    const match=scope.match(thermal)?.[0]??scope.match(industrialDecarbonization)?.[0];
+    if(match)return [match.toLowerCase()];
+    const sectorPhrases=[...relatedTopics(p.sector),...(/\bclimate\b/i.test(p.sector)?["clean energy"]:[])];
+    const {overlap,related}=topicHits(scope,sector,sectorPhrases);
+    return [...new Set([...related,...overlap])];
+  }
   const scopeHits=topicHits(scope,thematic,phrases);
   const sectorHits=topicHits(scope,sector,[]).overlap;
   const isParentNih=/\bNIH\b.*\b(?:parent|SBIR|STTR)\b/i.test(o.title);
@@ -203,6 +207,8 @@ export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[
       const matchedTerms=o.kind==="Grant"?[...new Set([...grantMatches,...(focus?.overlap??[]),...(focus?.related??[])])]:
         [...new Set([...overlap,...related,...synopsis.related,...(synopsis.overlap.length>=2 ? synopsis.overlap : [])])];
       const topicScore = Math.min(4,keywords(matchedTerms.join(" ")).size);
+      const broaderThermal=o.kind==="Grant"&&thermal.test(profileText)&&
+        !matchedTerms.some(term=>thermal.test(term)||industrialDecarbonization.test(term));
       const broadProgram = o.kind==="Grant" ? region.local && o.status==="Program link" && o.generic===true :
         (o.generic ?? (o.source === "Accelerator directory" && Boolean(o.programId)));
       const early = p.stage === "Idea" || p.stage === "Pre-seed";
@@ -228,7 +234,8 @@ export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[
       const needsPrior=o.prerequisites?.includes("Requires prior NIH SBIR/STTR award") && !p.priorNihAward;
       const needsTrial=o.prerequisites?.includes("Clinical trial required") && p.plansClinicalTrial!==true;
       const cap = domainMismatch ? 15 : !broadProgram && !topicScore ? 20 : restricted || startupFit==="institution" || startupFit==="ineligible" ? 27 :
-        needsPrior || needsTrial ? 36 : startupFit==="training" ? 44 : startupFit==="research" ? 55 : !curated && !broadProgram && !startupBoost && topicScore===1 ? 57 : 99;
+        needsPrior || needsTrial ? 36 : startupFit==="training" ? 44 : startupFit==="research" ? 55 : broaderThermal ? 49 :
+        !curated && !broadProgram && !startupBoost && topicScore===1 ? 57 : 99;
       const startupNote=startupBoost?"Small-business funding mechanism":startupFit==="research"?"Research mechanism; lower priority for a pre-seed startup":
         startupFit==="training"?"Training or career-development mechanism":startupFit==="institution"&&!restricted?"Institution-only eligibility":
         startupFit==="ineligible"?"Small businesses are excluded by the listing":"";
