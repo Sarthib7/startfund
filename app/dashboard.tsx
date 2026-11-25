@@ -3,6 +3,11 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { kinds, listingStatus, opportunityLocation, regions, selectProfileRegion, type Profile, type Radar, type Match, type Opportunity } from "../lib/domain";
 import { digestHtml } from "../lib/digest";
+import { ShareControls } from "./share-controls";
+import { SuggestOpportunity } from "./suggest-opportunity";
+import { MatchAnalytics } from "./match-analytics";
+import { plans } from "../lib/plans";
+import { ReportSummary } from "./report-summary";
 
 type Draft={why:string;subject:string;body:string;mode:string};
 class UsageLimitError extends Error {}
@@ -119,9 +124,9 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
  return <div className="shell">
   <header><Link href="/" className="brand"><span aria-hidden>◎</span> Startfund</Link><span className="topline">FUNDING RADAR</span><Link className="secondary nav-link" href="/catalog">Funding catalog ↗</Link><button className="secondary" onClick={()=>setDigest(!digest)} aria-expanded={digest}>{digest?"Close digest":"Weekly digest ↗"}</button></header>
   <main>
-   <div className="hero"><p className="eyebrow"><span className="live"/> STARTUP INTELLIGENCE</p><h1>Your funding radar<span>.</span></h1><p>Find grants, tenders, investors, and free tools for your startup.</p></div>
+   <div className="hero"><p className="eyebrow"><span className="live"/> STARTUP INTELLIGENCE</p><h1>Your funding radar<span>.</span></h1><p>Find grants, tenders, investors, and free tools for your startup.</p><div className="hero-plan"><span>Free: {plans.Free.scan} scans and {plans.Free.draft} drafts per day</span><Link className="secondary nav-link pricing-link" href="/pricing">Compare Free and Pro ↗</Link></div></div>
    <section className="panel intake" aria-label="Funding assistant">
-    <form onSubmit={ask}><label htmlFor="company">What’s your company? <span className="muted">(name or website)</span></label><div className="ask"><input id="company" ref={companyRef} required maxLength={240} value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="Company website or a follow-up question"/><button className="primary" disabled={looking}>{looking?"Working…":"Ask →"}</button></div></form>
+    <form onSubmit={ask}><label htmlFor="company">Company website or name</label><div className="ask"><input id="company" ref={companyRef} required maxLength={240} value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="e.g. yourcompany.com"/><button className="primary" disabled={looking}>{looking?"Working…":"Continue →"}</button></div><p className="meta">Review your company profile, then run a scan to build a scored funding report.</p></form>
     {turns.length>0&&<div className="turns" aria-live="polite">{turns.map((turn,i)=><p key={i}><strong>{turn.question}</strong><br/>{turn.answer}</p>)}</div>}
     <div className="intake-actions">{sample&&<span className="badge">Sample: {initialProfile.name}</span>}<button className="secondary" onClick={()=>setEdit(!edit)}>{edit?"Hide details":"Edit details"}</button><button className="secondary" onClick={()=>{setProfile(initialClean(initialProfile));setTeamCountries("");setTeamSubdivisions("");setConfirmation(false);setEdit(true);}}>Clear</button></div>
     {confirmation&&<div className="profile-confirm"><div className="intake-actions">{[profile.name,profile.sector,profile.companyCountry??regions[profile.region],profile.stage].filter(Boolean).map((value,i)=><button key={i} className="secondary" onClick={()=>setEdit(true)}>{value}</button>)}</div><p>{profile.description}</p>{missingFields.length?<button className="secondary" onClick={()=>editField(missingFields[0])}>Add {missingFields.map(field=>"a "+field).join(" and ")} to scan</button>:<button className="primary" disabled={pending} onClick={()=>scan()}>{pending?"Scanning…":"Confirm and scan →"}</button>}</div>}
@@ -148,6 +153,9 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
     <section className="panel results" ref={resultsRef} tabIndex={-1} aria-busy={pending}>
      <div className="section-kicker">02 / DISCOVER</div><div className="result-title"><h2>{shownBundle?"Free builder bundle":"Ranked opportunities"}</h2><span className="muted" aria-live="polite">{resultCount} {shownBundle?"perks":"matches"}</span></div>
      <p className="meta">For {saved.name} <span>·</span> Scanned {formatDate(radar.scannedAt)} UTC</p>
+     {!shownBundle&&<ReportSummary score={radar.matches.length?Math.max(...radar.matches.map(m=>m.score)):null} total={radar.matches.length}/>}
+     <div className="action-strip">{!sample&&<ShareControls key={radar.scannedAt}/>}<SuggestOpportunity/></div>
+     {!shownBundle&&<MatchAnalytics radar={radar}/>}
      <nav className="filters" aria-label="Filter opportunities">{(["All",...kinds] as const).map(x=><button type="button" key={x} className={filter===x?"selected":""} aria-pressed={filter===x} onClick={()=>setFilter(x)}>{x==="All"?x:names[x]}</button>)}</nav>
      {radar.warnings.length>0&&<p className="warning">{radar.warnings.join(" · ")}</p>}
      <ul className="rows">{shownBundle ? shownBundle.map(item=><li key={item.id}><div className="rowmain">
