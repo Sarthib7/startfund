@@ -31,7 +31,7 @@ export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[
       const overlap = tokens.filter(t => new RegExp("\\b" + t + "\\b").test(text)).length;
       const early = p.stage === "Idea" || p.stage === "Pre-seed";
       const stageFit = early ? /pre-seed|early.stage|phase i\b|accelerat/.test(text) : /scale|growth|phase ii\b/.test(text);
-      const domainMismatch = o.kind === "Grant" && /\b(?:nih|nidcr|clinical trial)\b/i.test(o.title) && !biomedical.test(profileText);
+      const domainMismatch = o.kind === "Grant" && /\b(?:nih|nidcr|clinical trials?)\b/i.test(o.title) && !biomedical.test(profileText);
       const fit = Math.min(90, 42 + (o.region === p.region ? 12 : 4) + Math.min(overlap,4)*7 + (stageFit ? 8 : 0));
       const days = o.deadline ? Math.max(0,(Date.parse(o.deadline)-Date.parse(day))/86400000) : Infinity;
       const urgency = days <= 14 ? 1.15 : days <= 45 ? 1.08 : 1;

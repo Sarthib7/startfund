@@ -52,6 +52,7 @@ test("broad keyword matches do not overrate biomedical grants for a non-medical 
  const [first,second]=rank([nih,grant],demo,Date.parse(at));
  assert.equal(first.id,grant.id);
  assert.match(second.reason,/outside your stated focus/);
+ assert.match(rank([{...nih,title:"Clinical Trials Not Allowed"}],demo,Date.parse(at))[0].reason,/outside your stated focus/);
 });
 test("award and contribution amounts retain currency and evidence semantics",()=>{
  const [nsf]=nsfFacts({response:{award:[{id:"7",title:"SBIR",fundsObligatedAmt:"250,000",date:"11/20/2026"}]}},at);
