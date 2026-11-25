@@ -156,9 +156,10 @@ function regionalNote(o: Opportunity, locations:ReturnType<typeof profileLocatio
     o.countries?.length ? `Place of performance: ${o.countries.join(", ")}` :
     label ? `${region}-only per source; outside your region` : `${region} call; check eligibility for your region` : undefined };
 }
-export function listingStatus(o:Opportunity,day=new Date().toISOString().slice(0,10)):ListingStatus {
+export function listingStatus(o:Opportunity,asOf=new Date().toISOString()):ListingStatus {
+  const day=asOf.slice(0,10);
   if (o.status==="Late applications") return o.deadline && o.deadline>=day ? "Open" : o.status;
-  if (o.deadline && o.deadline<day) return "Closed";
+  if (o.deadline && (o.deadline.includes("T") ? Date.parse(o.deadline)<=Date.parse(asOf) : o.deadline<day)) return "Closed";
   if (o.opensAt && o.opensAt>day) return "Forthcoming";
   return o.status ?? "Program link";
 }
@@ -171,13 +172,14 @@ export function catalogMatch(query:string,text:string) {
 }
 
 export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[] {
-  const day = new Date(now).toISOString().slice(0,10);
+  const asOf = new Date(now).toISOString();
+  const day = asOf.slice(0,10);
   const profileText = (p.sector + " " + p.description).toLowerCase();
   const {words,phrases}=profileTopics(profileText);
   const locations=profileLocations(p);
   const explicitLocation=Boolean(p.companyCountry || p.companySubdivision || p.developerCountries?.length || p.developerSubdivisions?.length);
   const biomedicalPreSeed=p.stage==="Pre-seed"&&biomedical.test(profileText);
-  return items.filter(o => o.kind!=="Market signal" && p.needs.includes(o.kind) && listingStatus(o,day)!=="Closed")
+  return items.filter(o => o.kind!=="Market signal" && p.needs.includes(o.kind) && listingStatus(o,asOf)!=="Closed")
     .flatMap(o => {
       const region = regionalNote(o,locations);
       if(!region.local && (o.kind==="Tender" || (o.kind==="Grant" && (o.countries?.length || o.subdivisions?.length || (explicitLocation && region.restricted))))) return [];
@@ -201,7 +203,7 @@ export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[
       const startupBoost=startupFit==="startup" && !region.note;
       const startupAdjustment=startupBoost?22:startupFit==="research"?-18:startupFit==="training"?-25:0;
       const score = fit + (region.local ? 6 : region.note ? -16 : 0) + (stageFit ? 3 : 0) + urgency + amount -
-        (o.signal ? 4 : 0) - (listingStatus(o,day)==="Forthcoming" ? 10 : 0) + startupAdjustment;
+        (o.signal ? 4 : 0) - (listingStatus(o,asOf)==="Forthcoming" ? 10 : 0) + startupAdjustment;
       const topic = domainMismatch ? "Biomedical grant outside your stated focus" : broadProgram ? "General startup program" :
         matchedTerms.length ? `Matched: ${matchedTerms.join(", ")}` : "No topical match";
       const needsPrior=o.prerequisites?.includes("Requires prior NIH SBIR/STTR award") && !p.priorNihAward;

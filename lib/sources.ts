@@ -168,6 +168,7 @@ const tedRow=z.object({
   "additional-classification-proc":z.array(z.string()).optional(),
   "additional-classification-lot":z.array(z.string()).optional(),
   "deadline-receipt-tender-date-lot":z.array(z.string()),
+  "deadline-receipt-tender-time-lot":z.array(z.string()).optional(),
   "place-of-performance-country-lot":z.array(z.string()).optional(),
   "place-of-performance-country-proc":z.array(z.string()).optional(),
   "publication-date":z.string().optional(),
@@ -182,7 +183,17 @@ export function parseTed(raw:unknown,fetchedAt:string):Opportunity[] {
     const primary=[...(r["main-classification-proc"]??[]),...(r["main-classification-lot"]??[])];
     const cpvCodes=[...new Set(tedCpvFields.flatMap(field=>r[field]??[]))];
     if(!hasStartupTenderCpv(primary) || !hasStartupTenderCpv(cpvCodes)) return [];
-    const deadline=r["deadline-receipt-tender-date-lot"].map(date).filter(d=>d && d>=fetchedAt.slice(0,10)).sort()[0];
+    const dates=r["deadline-receipt-tender-date-lot"], times=r["deadline-receipt-tender-time-lot"];
+    const deadline=dates.flatMap((raw,index)=>{
+      const day=date(raw);
+      if(!day) return [];
+      const time=times?.length===dates.length?times[index]:undefined;
+      const offset=raw.slice(10).match(/^(?:Z|[+-]\d{2}:\d{2})$/)?.[0];
+      const match=time?.match(/^(\d{2}:\d{2}:\d{2}(?:\.\d+)?)(Z|[+-]\d{2}:\d{2})?$/);
+      const stamp=match && (match[2] || offset) ? Date.parse(day+"T"+match[1]+(match[2]??offset)) : NaN;
+      if(Number.isFinite(stamp)) return stamp>Date.parse(fetchedAt)?[new Date(stamp).toISOString()]:[];
+      return day>=fetchedAt.slice(0,10)?[day]:[];
+    }).sort()[0];
     const countries=[...new Set([...(r["place-of-performance-country-lot"]??[]),...(r["place-of-performance-country-proc"]??[])]
       .map(tedCountry).filter(c=>c!==undefined))];
     const title=cleanText(r["notice-title"].eng??Object.values(r["notice-title"])[0],600);

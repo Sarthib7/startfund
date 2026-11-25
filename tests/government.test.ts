@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { catalogMatch, demo, profileSchema, rank, type Opportunity } from "../lib/domain";
+import { catalogMatch, demo, listingStatus, profileSchema, rank, type Opportunity } from "../lib/domain";
 import { parseGermanFeed, parseGermanGrant, parseTed, searchTed, sources } from "../lib/sources";
 import { save, saved } from "../lib/store";
 import { reader } from "../lib/transport";
@@ -62,6 +62,17 @@ test("TED rejects 685481-2026 when construction is listed as an additional proce
   assert.deepEqual(parseTed({notices:[{...engineering,[field]:["45220000"]}]},at),[]);
  }
  assert.deepEqual(parseTed({notices:[{...engineering,"additional-classification-lot":["48000000"]}]},at)[0].cpvCodes,["71300000","48000000"]);
+});
+
+test("TED uses the actual lot cutoff and cached open results close at that time",()=>{
+ const lots={...notice,"deadline-receipt-tender-date-lot":["2026-11-25+01:00","2026-11-25+01:00"],
+  "deadline-receipt-tender-time-lot":["10:00:00+01:00","17:00:00+01:00"]};
+ const [row]=parseTed({notices:[lots]},at);
+ assert.equal(row.deadline,"2026-11-25T16:00:00.000Z");
+ assert.equal(listingStatus(row,at),"Open");
+ assert.equal(listingStatus(row,"2026-11-25T16:00:00Z"),"Closed");
+ assert.deepEqual(rank([row],{...demo,region:"DE"},Date.parse("2026-11-25T16:01:00Z")),[]);
+ assert.deepEqual(parseTed({notices:[lots]},"2026-11-25T16:01:00Z"),[]);
 });
 
 test("saved radar results do not surface tenders from before CPV filtering",async t=>{
