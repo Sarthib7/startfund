@@ -119,6 +119,7 @@ export async function searchEu(at:string,read:Reader,keyword?:string) {
     return [...new Map(items.map(item=>[item.id,item])).values()];
 }
 const ifs="https://apply-for-innovation-funding.service.gov.uk";
+const ifsSearch=new URL("/competition/search",ifs);
 export function parseInnovateUk(html:string,fetchedAt:string):Opportunity[] {
   const links=[...html.matchAll(/<a\b[^>]*href="(\/competition\/(\d+)\/overview\/[\da-f-]+)"[^>]*>([\s\S]*?)<\/a>/gi)];
   return links.flatMap((link,i)=>{
@@ -137,6 +138,23 @@ export function parseInnovateUk(html:string,fetchedAt:string):Opportunity[] {
       url:ifs+link[1],currency:"GBP",amount:null,eligibility:"UK competition; check registration, lead applicant and consortium requirements in the source.",fetchedAt}];
   });
 }
+async function innovateUk(at:string,read:Reader) {
+  const rows=new Map<string,Opportunity>(),visited=new Set<string>();
+  let page=ifsSearch;
+  for(let i=0;i<5;i++){
+    if(visited.has(page.href)) break;
+    visited.add(page.href);
+    const html=String(await read(page.href,{headers:{accept:"text/html"}}));
+    for(const row of parseInnovateUk(html,at)) rows.set(row.id,row);
+    const nextTag=html.match(/<a\b[^>]*\brel=(?:"next"|'next')[^>]*>/i)?.[0];
+    const href=nextTag?.match(/\bhref=["']([^"']+)["']/i)?.[1];
+    if(!href) break;
+    const next=URL.parse(href.replaceAll("&amp;","&"),page);
+    if(!next||next.origin!==ifsSearch.origin||next.pathname!==ifsSearch.pathname||!/^\d+$/.test(next.searchParams.get("page")??"")) break;
+    page=next;
+  }
+  return [...rows.values()];
+}
 export const sources = {
   "Grants.gov":async (at:string,read:Reader=reader()) => {
     const rows=await searchUs(at,read);
@@ -148,7 +166,7 @@ export const sources = {
     const rows=[...(general.status==="fulfilled"?general.value:[]),...(eic.status==="fulfilled"?eic.value:[])];
     return [...new Map(rows.filter(o=>o.status!=="Closed").map(o=>[o.id,o])).values()];
   },
-  "Innovate UK":async(at:string,read:Reader=reader())=>parseInnovateUk(String(await read(ifs+"/competition/search",{headers:{accept:"text/html"}})),at),
+  "Innovate UK":async(at:string,read:Reader=reader())=>innovateUk(at,read),
   "Hacker News":async(at:string,read:Reader=reader())=>{
     const base="https://hn.algolia.com/api/v1/search_by_date?";
     const requests=["startup venture funding","startup launch"];

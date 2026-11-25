@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { catalogMatch, demo, profileQueries, rank, shortlist, template, type Opportunity } from "../lib/domain";
 import { digestHtml } from "../lib/digest";
-import { parseEu, parseHn, parseInnovateUk, parseUs } from "../lib/sources";
+import { parseEu, parseHn, parseInnovateUk, parseUs, sources } from "../lib/sources";
 import { cordisFacts, nsfFacts, secFacts, ukriFact, ycFacts } from "../lib/facts";
 import { curatedProgramRows } from "../lib/programs";
 
@@ -149,6 +149,20 @@ test("Innovate UK parses competition facts and links, not page boilerplate",()=>
  assert.equal(row.status,"Open");
  assert.equal(row.region,"UK");
  assert.match(row.url,/service\.gov\.uk\/competition\/2624/);
+});
+test("Innovate UK follows the next link, deduplicates competitions and caps requests",async()=>{
+ const visited:string[]=[];
+ const competition=(id:number)=>`<a href="/competition/${id}/overview/0d597772-a841-4b82-ab80-51c09cda2206">Competition ${id}</a><dl class="date-definition-list"><dt>Opened:</dt><dd>24 November 2026</dd><dt>Closes:</dt><dd>20 January 2027</dd></dl>`;
+ const rows=await sources["Innovate UK"](at,async (url,init)=>{
+  assert.equal(new Headers(init?.headers).get("accept"),"text/html");
+  const parsed=new URL(url);
+  visited.push(parsed.origin+parsed.pathname);
+  const index=Number(parsed.searchParams.get("page")??0);
+  return competition(1)+competition(index+2)+`<a href="?page=${index+1}" rel="next">Next</a>`;
+ });
+ assert.equal(visited.length,5);
+ assert.ok(visited.every(url=>url==="https://apply-for-innovation-funding.service.gov.uk/competition/search"));
+ assert.deepEqual(rows.map(row=>row.id),[1,2,3,4,5,6].map(id=>`innovate-uk-${id}`));
 });
 test("award and contribution amounts retain currency and evidence semantics",()=>{
  const [nsf]=nsfFacts({response:{award:[{id:"7",title:"SBIR",fundsObligatedAmt:"250,000",date:"11/20/2026"}]}},at);
