@@ -141,8 +141,24 @@ test("signed Stripe events drive shared Pro quotas, one-time recovery, and Porta
   assert.equal((await billingAccount(visitor))?.pro,false);
   assert.equal((await usageIdentity(statusRequest(restoredCookie)))?.plan,"Free");
   assert.equal((await handlers.browser(request("restore",undefined,{key}),"restore")).status,401);
+  assert.equal((await handlers.browser(request("claim",cookie,{rotate:true}),"claim")).status,409);
   const [count]=await (await db()).all("SELECT count(*) AS n FROM billing_events");
   assert.equal(Number(count.n),6);
+
+  assert.equal((await handlers.webhook(event("evt_restarted","customer.subscription.updated",106,sub))).status,200);
+  assert.equal((await handlers.browser(request("claim",undefined,{rotate:true}),"claim")).status,404);
+  assert.equal((await handlers.browser(request("claim",cookie),"claim")).status,409);
+  const replacement=await handlers.browser(request("claim",cookie,{rotate:true}),"claim");
+  assert.equal(replacement.status,200);
+  assert.equal(replacement.headers.get("cache-control"),"no-store");
+  const {key:newKey}=await replacement.json();
+  assert.notEqual(newKey,key);
+  const [updated]=await (await db()).all("SELECT key_hash FROM billing_customers WHERE visitor=?",visitor);
+  assert.equal(updated.key_hash,createHash("sha256").update(newKey).digest("hex"));
+  assert.equal(await usageIdentity(apiRequest),null);
+  assert.equal((await handlers.browser(request("restore",undefined,{key}),"restore")).status,401);
+  assert.deepEqual(await usageIdentity(new Request(origin,{headers:{Authorization:"Bearer "+newKey}})),owner);
+  assert.equal((await handlers.browser(request("restore",undefined,{key:newKey}),"restore")).status,200);
  }finally{
   delete process.env.STRIPE_SECRET_KEY;
   delete process.env.STRIPE_WEBHOOK_SECRET;

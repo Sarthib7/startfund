@@ -42,10 +42,10 @@ export async function recordBillingEvent(id:string,created:number,customer:strin
  await (await db()).run("INSERT OR IGNORE INTO billing_events VALUES (?,?,?,?,?)",id,created,customer,subscription,status);
 }
 
-export async function claimProKey(visitor:string){
+export async function claimProKey(visitor:string,rotate=false){
  const key="sf_pro_"+randomBytes(32).toString("base64url");
  const updated=await (await db()).run(`UPDATE billing_customers AS c SET key_hash=?
-  WHERE visitor=? AND key_hash IS NULL AND ${entitlement}`,hashKey(key),visitor);
+  WHERE visitor=? AND key_hash IS ${rotate?"NOT NULL":"NULL"} AND ${entitlement}`,hashKey(key),visitor);
  return updated?key:null;
 }
 

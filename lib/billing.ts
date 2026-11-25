@@ -74,8 +74,10 @@ export function billingHandlers(config:Config|null=billingConfig(),stripe=config
     if(!account)return json({error:"No billing account found on this device."},404);
     if(action==="claim"){
      if(!account.pro)return json({error:"Pro is not active yet."},409);
-     const key=await claimProKey(id);
-     return key?json({key}):json({error:"Your Pro API key has already been shown."},409);
+     const input=await request.json().catch(()=>null);
+     const rotate=input?.rotate===true;
+     const key=await claimProKey(id,rotate);
+     return key?json({key}):json({error:rotate?"Couldn’t replace your Pro API key. Check your billing status and try again.":"A Pro API key has already been issued."},409);
     }
     const portal=await stripe.billingPortal.sessions.create({customer:account.customer,return_url:`${siteOrigin(request)}/pricing`});
     return json({url:portal.url});

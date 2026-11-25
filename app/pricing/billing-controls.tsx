@@ -46,7 +46,10 @@ export function BillingControls({success=false}:{success?:boolean}){
    if(data.url)window.location.assign(data.url);
    if(action==="claim"){setKey(data.key);setStatus(previous=>previous&&({...previous,issued:true}));}
    if(action==="restore"){setRestore(false);setAttempt(previous=>previous+1);}
-  }catch(e){setError(e instanceof Error?e.message:"Billing is temporarily unavailable.");}
+  }catch(e){
+   setError(e instanceof Error?e.message:"Billing is temporarily unavailable.");
+   if(action==="claim")setAttempt(previous=>previous+1);
+  }
   finally{setBusy(false);}
  }
  function restorePro(event:FormEvent<HTMLFormElement>){
@@ -64,11 +67,12 @@ export function BillingControls({success=false}:{success?:boolean}){
    {key&&<label>Save this Pro API key now. It won’t be shown again.
     <input type="text" value={key} readOnly onFocus={event=>event.currentTarget.select()}/>
    </label>}
-   {success&&status.issued&&!key&&<p className="muted">Your Pro API key has already been shown. Use your saved key to restore Pro on another device.</p>}
+   {status.pro&&status.issued&&!key&&<p className="muted">Use your saved key to restore Pro on another device. If you lost it, replacing it will invalidate the old key.</p>}
    <div className="action-strip">
     {!success&&!status.pro&&<button className="primary" disabled={busy} onClick={()=>void act("checkout")}>Upgrade to Pro ↗</button>}
     {success&&!status.pro&&!waiting&&<button className="secondary" onClick={()=>{setWaiting(true);setAttempt(previous=>previous+1);}}>Check again</button>}
     {status.pro&&!status.issued&&<button className="primary" disabled={busy} onClick={()=>void act("claim")}>Show my Pro API key</button>}
+    {status.pro&&status.issued&&!key&&<button className="secondary" disabled={busy} onClick={()=>void act("claim",{rotate:true})}>Replace Pro API key</button>}
     {status.customer&&<button className="secondary" disabled={busy} onClick={()=>void act("portal")}>Manage billing ↗</button>}
     {!status.pro&&<button className="secondary" aria-expanded={restore} onClick={()=>setRestore(!restore)}>Restore Pro</button>}
     {success&&status.pro&&<Link className="secondary nav-link pricing-link" href="/">Open funding radar ↗</Link>}
