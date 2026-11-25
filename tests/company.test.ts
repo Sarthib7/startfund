@@ -18,6 +18,7 @@ test("company analysis obeys crawler-specific path rules and infers editable pub
  assert.equal(profile.region,"DE");
  assert.equal(profile.companyCountry,"DE");
  assert.equal(inferCompany("","",new URL("https://example.fr")).companyCountry,"FR");
+ assert.equal(inferCompany("","",new URL("https://example.fr")).region,"EU");
  const german=inferCompany('<html lang="de"><title>Sauberer Strom | 1KOMMA5°</title><h1>Solar und Wärmepumpen</h1>',"",new URL("https://1komma5.com/de/"));
  assert.equal(german.name,"1KOMMA5°");
  assert.equal(german.region,"DE");

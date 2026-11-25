@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { kinds, listingStatus, opportunityLocation, regions, type Profile, type Radar, type Match, type Opportunity } from "../lib/domain";
+import { kinds, listingStatus, opportunityLocation, regions, resolveRegion, type Profile, type Radar, type Match, type Opportunity } from "../lib/domain";
 import { digestHtml } from "../lib/digest";
 
 type Draft={why:string;subject:string;body:string;mode:string};
@@ -9,7 +9,7 @@ const names={Grant:"Grants",Tender:"Tenders",Accelerator:"Accelerators",VC:"Inve
 const formatDate=(value:string)=>new Intl.DateTimeFormat("en",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"}).format(new Date(value));
 const money=(value:number,m:Match)=>new Intl.NumberFormat("en",{style:"currency",currency:m.currency,maximumFractionDigits:0}).format(value);
 const dueLabel=(m:Match)=>m.noticeExpires?"Next due":listingStatus(m)==="Late applications"?"On-time deadline":"Due";
-const initialClean=(p:Profile)=>({...p,name:"",description:"",sector:"",email:"",companyCountry:undefined,developerCountries:undefined,companySubdivision:undefined,developerSubdivisions:undefined,priorNihAward:undefined,plansClinicalTrial:undefined});
+const initialClean=(p:Profile)=>({...p,name:"",description:"",sector:"",email:"",regionExplicit:false,companyCountry:undefined,developerCountries:undefined,companySubdivision:undefined,developerSubdivisions:undefined,priorNihAward:undefined,plansClinicalTrial:undefined});
 
 export default function Dashboard({initialProfile,initialRadar,initialSample}:{initialProfile:Profile;initialRadar:Radar;initialSample:boolean}){
  const [profile,setProfile]=useState(initialProfile),[saved,setSaved]=useState(initialProfile),[radar,setRadar]=useState(initialRadar);
@@ -26,6 +26,7 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
  const lastListing=useRef<Match|null>(null);
  const setupRef=useRef<HTMLElement>(null);
  const missingFields=[...(!profile.description.trim()?["description"]:[]),...(!profile.sector.trim()?["sector"]:[])];
+ const effectiveRegion=resolveRegion(profile);
  const scrollTo=(element:HTMLElement|null)=>{element?.scrollIntoView({block:"start",behavior:"smooth"});element?.focus({preventScroll:true});};
  function editField(name:string){
   setEdit(true);
@@ -50,7 +51,7 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
  async function scan(event?:FormEvent){
   event?.preventDefault();setPending(true);setError("");
   try{
-   const input={...profile,developerCountries:teamCountries.split(/[\s,]+/).filter(Boolean),developerSubdivisions:teamSubdivisions.split(/[\s,]+/).filter(Boolean)};
+   const input={...profile,region:effectiveRegion,regionExplicit:profile.regionExplicit??false,developerCountries:teamCountries.split(/[\s,]+/).filter(Boolean),developerSubdivisions:teamSubdivisions.split(/[\s,]+/).filter(Boolean)};
    const res=await fetch("/api/radar",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
    const data=await res.json();if(!res.ok)throw new Error(data.error);
    setSaved(input);setRadar(data);setFilter("All");setBundle(null);setSelected(null);setSample(false);setConfirmation(false);setEdit(false);
@@ -125,7 +126,7 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
      <label>Startup<input required maxLength={80} value={profile.name} onChange={e=>setProfile({...profile,name:e.target.value})}/></label>
      <label>What you do<textarea name="description" required rows={3} maxLength={400} value={profile.description} onChange={e=>setProfile({...profile,description:e.target.value})}/></label>
      <div className="cols"><label>Stage<select value={profile.stage} onChange={e=>setProfile({...profile,stage:e.target.value as Profile["stage"]})}>{["Idea","Pre-seed","Seed","Growth","Not sure"].map(x=><option key={x}>{x}</option>)}</select></label>
-     <label>Region fallback<select value={profile.region} onChange={e=>setProfile({...profile,region:e.target.value as Profile["region"]})}>{Object.entries(regions).map(([code,label])=><option value={code} key={code}>{label}</option>)}</select></label></div>
+     <label>Region fallback<select value={profile.regionExplicit?profile.region:""} onChange={e=>{const value=e.target.value;setProfile({...profile,region:value?value as Profile["region"]:profile.region,regionExplicit:Boolean(value)});}}><option value="">Automatic — {regions[resolveRegion({...profile,regionExplicit:false})]}</option>{Object.entries(regions).map(([code,label])=><option value={code} key={code}>{label}</option>)}</select></label></div>
      <label>Company country code <span className="muted">(optional)</span><input maxLength={2} pattern="[A-Za-z]{2}" placeholder="e.g. DE" value={profile.companyCountry??""} onChange={e=>setProfile({...profile,companyCountry:e.target.value.toUpperCase()||undefined})}/></label>
      <label>Developer country codes <span className="muted">(optional, up to 8)</span><input maxLength={40} pattern="[A-Za-z]{2}([, ]+[A-Za-z]{2}){0,7}[, ]*" placeholder="e.g. FR, ES" value={teamCountries} onChange={e=>setTeamCountries(e.target.value.toUpperCase())}/></label>
      <label>Company state or region code <span className="muted">(optional)</span><input maxLength={6} pattern="[A-Za-z]{2}-[A-Za-z0-9]{1,3}" placeholder="e.g. US-CA" value={profile.companySubdivision??""} onChange={e=>setProfile({...profile,companySubdivision:e.target.value.toUpperCase()||undefined})}/></label>

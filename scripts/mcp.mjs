@@ -6,7 +6,7 @@ const spec={name:"search_funding",description:"Search startup funding opportunit
 }};
 const country={type:"string",pattern:"^[A-Za-z]{2}$"};
 const subdivision={type:"string",pattern:"^[A-Za-z]{2}-[A-Za-z0-9]{1,3}$"};
-const profile={type:"object",properties:{name:{type:"string"},description:{type:"string"},sector:{type:"string"},stage:{enum:["Idea","Pre-seed","Seed","Growth","Not sure"]},region:{enum:["US","DE","UK","EU","Other"]},companyCountry:country,developerCountries:{type:"array",items:country,maxItems:8},companySubdivision:subdivision,developerSubdivisions:{type:"array",items:subdivision,maxItems:8},needs:{type:"array",items:{enum:["Grant","Tender","Accelerator","VC","Perks","Growth"]}}},required:["name","description","sector","stage","region","needs"]};
+const profile={type:"object",properties:{name:{type:"string"},description:{type:"string"},sector:{type:"string"},stage:{enum:["Idea","Pre-seed","Seed","Growth","Not sure"]},region:{enum:["US","DE","UK","EU","Other"]},regionExplicit:{type:"boolean"},companyCountry:country,developerCountries:{type:"array",items:country,maxItems:8},companySubdivision:subdivision,developerSubdivisions:{type:"array",items:subdivision,maxItems:8},needs:{type:"array",items:{enum:["Grant","Tender","Accelerator","VC","Perks","Growth"]}}},required:["name","description","sector","stage","needs"]};
 const specs=[spec,
  {name:"analyze_company",description:"Infer a draft profile from a public company website.",inputSchema:{type:"object",properties:{company:{type:"string",maxLength:240}},required:["company"]}},
  {name:"recommend",description:"Rank funding opportunities by a confirmed startup profile.",inputSchema:{type:"object",properties:{profile},required:["profile"]}},

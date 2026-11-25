@@ -111,3 +111,13 @@ test("curated grant fit differentiates scope, stage and sector for the same foun
  const biotech=rank(items,{...founder,sector:"Biotechnology",description:"Developing healthcare medical devices."},Date.parse(at));
  assert.ok(biotech.find(r=>r.id==="in-birac")!.score>early.find(r=>r.id==="in-birac")!.score);
 });
+
+test("automatic region follows company country without replacing explicit or legacy region values",()=>{
+ for(const [companyCountry,region] of [["FR","EU"],["GB","UK"],["US","US"],["DE","DE"],["IN","Other"]]){
+  assert.equal(profileSchema.parse({...demo,region:undefined,companyCountry}).region,region);
+  assert.equal(profileSchema.parse({...demo,regionExplicit:false,companyCountry}).region,region);
+ }
+ assert.equal(profileSchema.parse({...demo,companyCountry:"FR",regionExplicit:true}).region,"US");
+ assert.equal(profileSchema.parse({...demo,region:"UK"}).region,"UK");
+ assert.equal(profileSchema.parse({...demo,regionExplicit:false,companySubdivision:"IN-KA"}).region,"Other");
+});

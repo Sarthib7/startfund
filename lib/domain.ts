@@ -10,11 +10,18 @@ const country=z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/).transform(code
   .refine(code=>/^[A-Z]{2}$/.test(code) && !["EU","UN","ZZ"].includes(code) && countryNames.of(code)!==undefined,"Enter a valid country code");
 const subdivision=z.string().trim().toUpperCase().regex(/^[A-Z]{2}-[A-Z0-9]{1,3}$/)
   .refine(code=>code.slice(0,2)!=="UK" && country.safeParse(code.slice(0,2)).success,"Use a country-region code such as US-CA or GB-SCT");
+type Region=keyof typeof regions;
+export function resolveRegion(p:{region?:Region;regionExplicit?:boolean;companyCountry?:string;companySubdivision?:string}):Region {
+  if(p.regionExplicit && p.region) return p.region;
+  const code=country.safeParse(p.companyCountry || p.companySubdivision?.slice(0,2)).data;
+  return code==="DE" || code==="US"?code:code==="GB"?"UK":code?Object.hasOwn(euCountryCodes,code)?"EU":"Other":p.region??"Other";
+}
 export const profileSchema = z.object({
   name: z.string().trim().min(1).max(80),
   description: z.string().trim().min(1).max(400),
   stage: z.enum(["Idea", "Pre-seed", "Seed", "Growth", "Not sure"]),
-  region: z.enum(regionsKeys()),
+  region: z.enum(regionsKeys()).optional(),
+  regionExplicit:z.boolean().optional(),
   companyCountry: country.optional(),
   developerCountries: z.array(country).max(8).optional(),
   companySubdivision: subdivision.optional(),
@@ -26,7 +33,7 @@ export const profileSchema = z.object({
   plansClinicalTrial:z.boolean().optional(),
 }).refine(p=>!p.companyCountry || !p.companySubdivision || p.companySubdivision.startsWith(p.companyCountry+"-"),{
  message:"Company region must belong to its country",path:["companySubdivision"],
-});
+}).transform(p=>({...p,region:resolveRegion({...p,regionExplicit:p.regionExplicit??Boolean(p.region)})}));
 export type Profile = z.infer<typeof profileSchema>;
 function regionsKeys(){ return Object.keys(regions) as (keyof typeof regions)[]; }
 export const demo: Profile = { name: "Canopy Labs", description: "AI software to help small manufacturers reduce energy use and waste.", stage: "Pre-seed", region: "US", sector: "Climate tech", needs: [...kinds] };
