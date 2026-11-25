@@ -72,7 +72,7 @@ const biomedicalGrant = /\b(?:nih|nidcr|nichd|nhlbi|clinical trials?)\b/i;
 const grantTopic = /^(?:climate|energy|electricity|manufactur\w*|decarboni[sz]\w*|waste)$/i;
 const fintech = /\b(?:fintech|financial technolog\w*|bookkeeping|accounting (?:software|tools?|automation|platforms?)|cash[ -]?flow (?:forecast\w*|management|analysis)|open banking|(?:digital|electronic|mobile|instant|cross[- ]border) payments?|payment (?:systems?|platforms?|processing)|finance teams?|financial ERP)\b/i;
 function grantTerms(o:Opportunity,p:Profile,profileText:string,words:Map<string,string>,phrases:string[]) {
-  const scope=o.title+" "+(o.description??"");
+  const scope=(o.title+" "+(o.description??"")).replace(/\b(?:clinical trials?|CT)\s*(?:[-:–]\s*)?(?:optional|required|not allowed|not permitted)\b/gi," ");
   const sector=new Map([...keywords(p.sector)].filter(word=>!genericGrantWords.has(word)).map(word=>[word,words.get(word)??word]));
   const scopeHits=topicHits(scope,words,phrases);
   const fintechHit=fintech.test(profileText) ? scope.match(fintech)?.[0] : undefined;
