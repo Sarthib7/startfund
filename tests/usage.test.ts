@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { routeAuth } from "eve/channels/auth";
+import { meteredAgentAuth } from "../agent/channels/eve";
 import { db } from "../lib/database";
 import { dayMs, meterUsage, usageIdentity, usageReport, withUsage } from "../lib/usage";
 import { completedRadar } from "../lib/store";
@@ -96,6 +98,21 @@ test("catalog API and MCP share a burst limit, aggregate counts, and prune old u
   const [old]=await store.all(`SELECT count(*) AS n FROM ${table} WHERE ${table==="usage_bursts"?"minute":"day"}<=?`,date);
   assert.equal(Number(old.n),0,table);
  }
+});
+
+test("Eve auth returns 429 and Retry-After when agent usage is exhausted", async t=>{
+ t.mock.method(Date,"now",()=>start+41*dayMs);
+ const secret="test-agent-password";
+ const auth=meteredAgentAuth(secret);
+ const request=new Request("https://example.com/eve/v1/sessions",{
+  method:"POST",headers:{authorization:"Basic "+Buffer.from("radar:"+secret).toString("base64")},
+ });
+ for(let i=0;i<8;i++)assert.ok(!((await routeAuth(request,auth)) instanceof Response));
+ const response=await routeAuth(request,auth);
+ assert.ok(response instanceof Response);
+ assert.equal(response.status,429);
+ assert.equal(response.headers.get("Retry-After"),"60");
+ assert.equal((await response.json()).code,"rate_limited");
 });
 
 test("completed scans coalesce and persist for the same ranking inputs and actor", async t=>{
