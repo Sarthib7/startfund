@@ -43,8 +43,9 @@ export async function sourceRows(name: Source) {
         const change=item.signal ? "Market signal" : before && before.deadline!==item.deadline ? "Deadline changed" : !before && previous ? "Newly observed" : null;
         if(change){
           const id=item.signal ? item.id : `${item.id}-${at}`;
+          const observed=change==="Deadline changed"?at:item.postedAt??at;
           writes.push({sql:"INSERT INTO signals VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET observed=excluded.observed,data=excluded.data",
-            args:[id,name,item.postedAt??at,signalJson({id,title:item.title,kind:change,source:name,url:item.url,observed:item.postedAt??at,postedAt:item.postedAt,fetchedAt:at,rights:rights[name]})]});
+            args:[id,name,observed,signalJson({id,title:item.title,kind:change,source:name,url:item.url,observed,postedAt:item.postedAt,fetchedAt:at,rights:rights[name]})]});
         }
       }
       writes.push({sql:"INSERT INTO sources VALUES (?,?,?) ON CONFLICT(name) DO UPDATE SET scanned=excluded.scanned,data=excluded.data",args:[name,at,JSON.stringify(items)]});

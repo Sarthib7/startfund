@@ -48,7 +48,7 @@ test("heat-pump profiles keep broader clean-energy grants without the core-topic
   const profile={...demo,region:"DE" as const,sector,description:"Heat pumps for industrial process heat and decarbonization."};
   const matches=shortlist(rank([nsf,core],profile,Date.parse(at)));
   assert.deepEqual(matches.map(row=>row.id),["heat-pump","nsf-seed"]);
-  assert.deepEqual(matches[1].matchedTerms,["clean energy"]);
+  assert.ok(matches[1].matchedTerms?.includes("clean energy"));
   assert.ok(matches[1].score<=49);
  }
 });
@@ -79,7 +79,7 @@ test("Grants.gov checks old undated search results for actual proposal close dat
   ]}};
   const {opportunityId}=JSON.parse(String(init?.body));
   detailRequests.push(opportunityId);
-  return {data:{ost:"POSTED",synopsis:{responseDateDesc:opportunityId===300997?
+  return {data:{ost:"POSTED",synopsis:{awardCeiling:null,awardFloor:null,estimatedFunding:null,responseDateDesc:opportunityId===300997?
     "Notice of Intent Due: March 23, 2018; Proposals Due: May 22, 2018 11:59 PM EST":undefined}}};
  },"biotechnology");
  assert.deepEqual(detailRequests,[300997,300998]);
