@@ -2,10 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { catalogMatch, demo, profileQueries, rank, shortlist, template, type Opportunity } from "../lib/domain";
 import { digestHtml } from "../lib/digest";
-import { parseEu, parseHn, parseInnovateUk, parseUs, searchUs, sources } from "../lib/sources";
+import { enrichUs, parseEu, parseHn, parseInnovateUk, parseUs, searchUs, sources } from "../lib/sources";
 import { cordisFacts, nsfFacts, secFacts, ukriFact, ycFacts } from "../lib/facts";
 import { curatedProgramRows } from "../lib/programs";
 import { catalogOverview } from "../lib/catalog-overview";
+import { mergeOpportunities } from "../lib/store";
 
 const at="2026-11-25T12:00:00Z";
 const [grant]=parseUs({errorcode:0,data:{oppHits:[{id:"12",title:"Energy software Phase I",closeDate:"12/02/2026"}]}},at);
@@ -52,6 +53,13 @@ test("heat-pump profiles keep broader clean-energy grants without the core-topic
   assert.ok(matches[1].score<=49);
  }
 });
+test("heat-pump profiles do not match clean-water grants on clean alone",()=>{
+ const profile={...demo,stage:"Pre-seed" as const,region:"US" as const,sector:"Clean energy",description:"Heat pumps for industrial process heat."};
+ const cleanWater={...grant,title:"Clean water grant",deadline:"2026-12-31"};
+ const matches=rank([cleanWater],profile,Date.parse(at));
+ assert.deepEqual(matches[0].matchedTerms,[]);
+ assert.deepEqual(shortlist(matches),[]);
+});
 test("Grants.gov uses close and archive evidence, not posting age, and decodes title entities",()=>{
  const [rolling,undated,expired,archived,archiveDate]=parseUs({errorcode:0,data:{oppHits:[
   {id:"41",title:"Law &amp; Science &ndash; rolling",closeDate:"10/15/2076"},
@@ -62,9 +70,9 @@ test("Grants.gov uses close and archive evidence, not posting age, and decodes t
  ]}},at);
  assert.equal(rolling.title,"Law & Science – rolling");
  assert.equal(rolling.deadline,null);
- assert.equal(rolling.status,"Rolling");
+ assert.equal(rolling.status,"Unknown");
  assert.equal(undated.postedAt,"2018-02-22");
- assert.equal(undated.status,"Rolling");
+ assert.equal(undated.status,"Unknown");
  assert.equal(expired.status,"Closed");
  assert.equal(archived.status,"Closed");
  assert.equal(archiveDate.status,"Closed");
@@ -76,16 +84,20 @@ test("Grants.gov checks old undated search results for actual proposal close dat
    ...Array.from({length:8},(_,i)=>({id:String(100+i),title:"Current notice",closeDate:"12/01/2026"})),
    {id:"300997",title:"EONS 2018",openDate:"02/22/2018",closeDate:"",oppStatus:"posted"},
    {id:"300998",title:"Undated award",openDate:"04/24/2018",closeDate:"",oppStatus:"posted"},
+   {id:"300999",title:"Unchecked award",openDate:"01/01/2019",oppStatus:"posted"},
+   {id:"301000",title:"No posting date",oppStatus:"posted"},
   ]}};
   const {opportunityId}=JSON.parse(String(init?.body));
   detailRequests.push(opportunityId);
-  return {data:{ost:"POSTED",synopsis:{awardCeiling:null,awardFloor:null,estimatedFunding:null,responseDateDesc:opportunityId===300997?
-    "Notice of Intent Due: March 23, 2018; Proposals Due: May 22, 2018 11:59 PM EST":undefined}}};
+  return {data:{ost:"POSTED",synopsis:{awardCeiling:null,awardFloor:null,estimatedFunding:null,responseDateDesc:opportunityId===300998?
+    undefined:"Notice of Intent Due: March 23, 2018; Proposals Due: May 22, 2018 11:59 PM EST"}}};
  },"biotechnology");
  assert.deepEqual(detailRequests,[300997,300998]);
  assert.equal(rows[8].status,"Closed");
  assert.equal(rows[8].deadline,"2018-05-22");
- assert.equal(rows[9].status,"Rolling");
+ assert.equal(rows[9].status,"Unknown");
+ assert.equal(rows[10].status,"Unknown");
+ assert.equal(rows[11].status,"Unknown");
 });
 test("US grants validate dates, URLs, and response status",()=>{
  assert.equal(grant.deadline,"2026-12-02");
@@ -93,6 +105,78 @@ test("US grants validate dates, URLs, and response status",()=>{
  assert.equal(grant.amount,null);
  assert.throws(()=>parseUs({errorcode:1,data:{oppHits:[]}},at));
  assert.equal(parseUs({errorcode:0,data:{oppHits:[{id:"13",title:"Grant",closeDate:"02/30/2027"}]}},at)[0].deadline,null);
+});
+test("Grants.gov reopens a stale search result when the synopsis extends the deadline",async()=>{
+ const [closed]=parseUs({errorcode:0,data:{oppHits:[{id:"13",title:"Extended grant",closeDate:"11/01/2026"}]}},at);
+ assert.equal(closed.status,"Closed");
+ const synopsis={awardCeiling:null,awardFloor:null,estimatedFunding:null,closeDate:"12/15/2026"};
+ const extended=await enrichUs(closed,async()=>({data:{ost:"POSTED",synopsis}}));
+ assert.equal(extended.status,"Open");
+ assert.equal(extended.deadline,"2026-12-15");
+ const archived=await enrichUs(closed,async()=>({data:{ost:"ARCHIVED",synopsis}}));
+ assert.equal(archived.status,"Closed");
+});
+test("Grants.gov never reopens explicit closure or archive evidence from search",async()=>{
+ const rows=parseUs({errorcode:0,data:{oppHits:[
+  {id:"13",title:"Closed grant",oppStatus:"closed"},
+  {id:"14",title:"Archived grant",oppStatus:"archived"},
+  {id:"15",title:"Past archive date",oppStatus:"posted",archiveDate:"11/01/2026"},
+ ]}},at);
+ assert.equal(rows.length,3);
+ for(const row of rows){
+  assert.equal(row.status,"Closed");
+  const enriched=await enrichUs(row,async()=>({data:{ost:"POSTED",synopsis:{
+   awardCeiling:null,awardFloor:null,estimatedFunding:null,closeDate:"12/15/2026",
+  }}}));
+  assert.equal(enriched.status,"Closed");
+  assert.equal(enriched.sourceClosed,true);
+ }
+});
+test("Grants.gov deadline-only synopsis corrections win tied search copies",async()=>{
+ const [expired,explicitlyClosed]=parseUs({errorcode:0,data:{oppHits:[
+  {id:"13",title:"Extended grant",closeDate:"11/01/2026"},
+  {id:"13",title:"Extended grant",oppStatus:"closed"},
+ ]}},at);
+ const extended=await enrichUs(expired,async()=>({data:{ost:"POSTED",synopsis:{
+  awardCeiling:null,awardFloor:null,estimatedFunding:null,closeDate:"12/15/2026",
+ }}}));
+ assert.equal(extended.fetchedAt,expired.fetchedAt);
+ assert.equal(extended.description,undefined);
+ assert.equal(extended.status,"Open");
+ assert.deepEqual(mergeOpportunities([expired,extended]),[extended]);
+ assert.deepEqual(mergeOpportunities([extended,expired]),[extended]);
+ assert.deepEqual(mergeOpportunities([extended,explicitlyClosed]),[explicitlyClosed]);
+ assert.deepEqual(mergeOpportunities([explicitlyClosed,extended]),[explicitlyClosed]);
+});
+test("Grants.gov skips placeholder deadline fields before choosing a synopsis date",async()=>{
+ const [undated]=parseUs({errorcode:0,data:{oppHits:[{id:"13",title:"Grant with placeholder date"}]}},at);
+ const synopsis={awardCeiling:null,awardFloor:null,estimatedFunding:null,responseDateStr:"12/15/2026"};
+ for(const closeDate of ["12/31/2099","11/26/2031"]){
+  const dated=await enrichUs(undated,async()=>({data:{ost:"POSTED",synopsis:{...synopsis,closeDate}}}));
+  assert.equal(dated.status,"Open");
+  assert.equal(dated.deadline,"2026-12-15");
+ }
+ const rolling=await enrichUs(undated,async()=>({data:{ost:"POSTED",synopsis:{
+  ...synopsis,closeDate:"12/31/2099",responseDateStr:null,responseDateDesc:"Applications are accepted on a rolling basis.",
+ }}}));
+ assert.equal(rolling.status,"Rolling");
+ assert.equal(rolling.deadline,null);
+});
+test("Grants.gov replaces NIH notice expiration metadata when the synopsis revises the deadline",async()=>{
+ const [parent]=parseUs({errorcode:0,data:{oppHits:[{
+  id:"13",title:"NIH Parent SBIR (R43/R44)",agencyCode:"HHS-NIH",closeDate:"04/05/2027",
+ }]}},at);
+ assert.equal(parent.noticeExpires,"2027-04-05");
+ const revise=(closeDate:string)=>enrichUs(parent,async()=>({data:{ost:"POSTED",synopsis:{
+  awardCeiling:null,awardFloor:null,estimatedFunding:null,closeDate,
+ }}}));
+ const revised=await revise("12/15/2026");
+ assert.equal(revised.deadline,"2026-12-15");
+ assert.equal(revised.noticeExpires,undefined);
+ assert.equal(revised.deadlineNote,undefined);
+ const extended=await revise("09/05/2027");
+ assert.equal(extended.deadline,"2027-01-05");
+ assert.equal(extended.noticeExpires,"2027-09-05");
 });
 test("EU calls keep future deadlines and exclude third-party URLs",()=>{
  const row={reference:"x",url:"https://ec.europa.eu/test",metadata:{title:["EU call"],deadlineDate:["2026-10-01","2027-04-01"],status:["31094502"]}};

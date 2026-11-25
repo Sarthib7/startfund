@@ -42,12 +42,13 @@ export function selectProfileRegion(p:Profile,region?:Region):Profile {
 }
 function regionsKeys(){ return Object.keys(regions) as (keyof typeof regions)[]; }
 export const demo: Profile = { name: "Canopy Labs", description: "AI software to help small manufacturers reduce energy use and waste.", stage: "Pre-seed", region: "US", sector: "Climate tech", needs: [...kinds] };
-export type ListingStatus = "Open"|"Rolling"|"Forthcoming"|"Closed"|"Program link"|"Late applications";
+export type ListingStatus = "Open"|"Rolling"|"Forthcoming"|"Closed"|"Program link"|"Late applications"|"Unknown";
 export type Opportunity = {
   id: string; title: string; kind: (typeof kinds)[number] | "Market signal"; region: "US" | "EU" | "DE" | "UK" | "Global";
   source: string; url: string; deadline: string | null; amount: number | null; currency: "USD" | "EUR" | "GBP" | "INR" | "AUD" | "SGD";
   eligibility: string | null; fetchedAt: string; signal?: boolean; programId?: string; description?: string;
-  status?: ListingStatus; opensAt?: string|null; programme?: string; postedAt?:string; generic?:boolean; contact?:string;
+  status?: ListingStatus; sourceClosed?:boolean; synopsisStatusVerified?:boolean;
+  opensAt?: string|null; programme?: string; postedAt?:string; generic?:boolean; contact?:string;
   verifiedAt?:string; noticeExpires?:string; deadlineNote?:string; applicationGuide?:string;
   awardFloor?:number|null; programFunding?:number|null; prerequisites?:string[]; countries?:string[]; subdivisions?:string[];
   cpvCodes?:string[]; cpvScope?:"procedure-and-lots";
@@ -110,6 +111,7 @@ function grantTerms(o:Opportunity,p:Profile,profileText:string,words:Map<string,
     const match=scope.match(thermal)?.[0]??scope.match(industrialDecarbonization)?.[0];
     if(match)return [match.toLowerCase()];
     const sectorPhrases=[...relatedTopics(p.sector),...(/\bclimate\b/i.test(p.sector)?["clean energy"]:[])];
+    sector.delete("clean");
     const {overlap,related}=topicHits(scope,sector,sectorPhrases);
     return [...new Set([...related,...overlap])];
   }
@@ -184,7 +186,7 @@ export function listingStatus(o:Opportunity,asOf=new Date().toISOString()):Listi
   if (o.opensAt && o.opensAt>day) return "Forthcoming";
   return o.status ?? "Program link";
 }
-const statusOrder:Record<ListingStatus,number>={Open:0,Rolling:0,"Late applications":0,Forthcoming:1,"Program link":2,Closed:3};
+const statusOrder:Record<ListingStatus,number>={Open:0,Rolling:0,"Late applications":0,Forthcoming:1,"Program link":2,Unknown:2,Closed:3};
 export const byListingStatus=(a:Opportunity,b:Opportunity)=>statusOrder[listingStatus(a)]-statusOrder[listingStatus(b)];
 export const catalogWords=(text:string)=>(text.toLowerCase().match(/[\p{L}\p{N}]+/gu)??[]).map(stem);
 export function catalogMatch(query:string,text:string) {

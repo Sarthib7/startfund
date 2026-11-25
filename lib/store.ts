@@ -131,8 +131,16 @@ const ukCompetitionUrl=(url:string)=>{
 };
 export function mergeOpportunities(rows:Opportunity[]) {
   const byId=new Map<string,Opportunity>();
+  const statusEvidence=(row:Opportunity)=>row.sourceClosed?2:row.synopsisStatusVerified?1:0;
   for(const row of rows){
     const earlier=byId.get(row.id);
+    if(earlier?.source==="Grants.gov"&&row.source==="Grants.gov"&&row.fetchedAt===earlier.fetchedAt){
+      const evidence=statusEvidence(row)-statusEvidence(earlier);
+      if(evidence){
+        if(evidence>0)byId.set(row.id,row);
+        continue;
+      }
+    }
     if(!earlier || row.description || (!earlier.description&&row.fetchedAt>earlier.fetchedAt)) byId.set(row.id,row);
   }
   const innovate=[...byId.values()].filter(row=>row.source==="Innovate UK");
