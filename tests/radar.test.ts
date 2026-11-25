@@ -41,7 +41,7 @@ test("digest escapes model-independent listing and profile content",()=>{
 });
 test("the shortlist keeps distinct needs visible even when one dominates",()=>{
  const grants=Array.from({length:18},(_,i)=>({...grant,id:`grant-${i}`}));
- const accelerator={...grant,id:"acc",kind:"Accelerator" as const,region:"Global" as const,deadline:null,title:"Accelerator"};
+ const accelerator={...grant,id:"acc",kind:"Accelerator" as const,region:"Global" as const,deadline:null,title:"Accelerator",source:"Accelerator directory",programId:"acc"};
  const results=shortlist(rank([...grants,accelerator],demo,Date.parse(at)));
  assert.equal(results.length,14);
  assert.ok(results.some(x=>x.id==="acc"));
@@ -53,6 +53,25 @@ test("broad keyword matches do not overrate biomedical grants for a non-medical 
  assert.equal(first.id,grant.id);
  assert.match(second.reason,/outside your stated focus/);
  assert.match(rank([{...nih,title:"Clinical Trials Not Allowed"}],demo,Date.parse(at))[0].reason,/outside your stated focus/);
+});
+test("topical listings outrank broad programs and urgent high-value unrelated grants",()=>{
+ const relevant={...grant,id:"manufacturing",title:"Industrial efficiency for manufacturing",deadline:null};
+ const quantum={...grant,id:"qubit",title:"LPS Qubit Collaboratory (LQC)",deadline:"2026-11-26",amount:100_000_000,
+  eligibility:"Small businesses are eligible for this Phase I funding program."};
+ const clinical={...quantum,id:"nih",title:"NIH Small Business Technology Transfer Grant (Clinical Trial Optional)"};
+ const aws={...grant,id:"aws",title:"AWS Activate",kind:"Growth" as const,source:"Accelerator directory",programId:"aws",region:"Global" as const,deadline:null};
+ const matches=rank([quantum,clinical,aws,relevant],demo,Date.parse(at));
+ assert.deepEqual(matches.map(m=>m.id),["manufacturing","aws","qubit","nih"]);
+ assert.match(matches[0].reason,/1 profile keyword matched/);
+ assert.match(matches[1].reason,/General startup program/);
+ assert.match(matches[2].reason,/No topical match/);
+ assert.ok(matches[0].score>matches[1].score && matches[1].score>=40 && matches[2].score<25);
+ assert.deepEqual(shortlist(matches).map(m=>m.id),["manufacturing","aws"]);
+});
+test("category reservations do not add off-topic signals or grants",()=>{
+ const growth={...grant,id:"news",kind:"Growth" as const,title:"New smartphone announced",signal:true};
+ const matches=rank([growth,{...grant,id:"nih",title:"NIH energy software Phase I trial"},grant],demo,Date.parse(at));
+ assert.deepEqual(shortlist(matches).map(m=>m.id),[grant.id]);
 });
 test("award and contribution amounts retain currency and evidence semantics",()=>{
  const [nsf]=nsfFacts({response:{award:[{id:"7",title:"SBIR",fundsObligatedAmt:"250,000",date:"11/20/2026"}]}},at);
