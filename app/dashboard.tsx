@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { kinds, listingStatus, regions, type Profile, type Radar, type Match } from "../lib/domain";
+import { kinds, listingStatus, regions, type Profile, type Radar, type Match, type Opportunity } from "../lib/domain";
 import { digestHtml } from "../lib/digest";
 
 type Draft={why:string;subject:string;body:string;mode:string};
@@ -15,6 +15,7 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
  const [profile,setProfile]=useState(initialProfile),[saved,setSaved]=useState(initialProfile),[radar,setRadar]=useState(initialRadar);
  const [sample,setSample]=useState(initialSample),[edit,setEdit]=useState(false),[confirmation,setConfirmation]=useState(false);
  const [pending,setPending]=useState(false),[error,setError]=useState(""),[filter,setFilter]=useState<string>("All");
+ const [bundle,setBundle]=useState<Opportunity[]|null>(null);
  const [prompt,setPrompt]=useState(""),[looking,setLooking]=useState(false),[turns,setTurns]=useState<{question:string;answer:string}[]>([]);
  const [selected,setSelected]=useState<Match|null>(null),[draft,setDraft]=useState<Draft|null>(null),[draftError,setDraftError]=useState(""),[copy,setCopy]=useState("");
  const [digest,setDigest]=useState(false),[digestState,setDigestState]=useState("off"),[digestEmail,setDigestEmail]=useState(""),
@@ -43,7 +44,7 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
   try{
    const res=await fetch("/api/radar",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(profile)});
    const data=await res.json();if(!res.ok)throw new Error(data.error);
-   setSaved(profile);setRadar(data);setFilter("All");setSelected(null);setSample(false);setConfirmation(false);setEdit(false);
+   setSaved(profile);setRadar(data);setFilter("All");setBundle(null);setSelected(null);setSample(false);setConfirmation(false);setEdit(false);
    requestAnimationFrame(()=>scrollTo(resultsRef.current));
   }catch(e){setError(e instanceof Error?e.message:"Scan unavailable.");}
   finally{setPending(false);}
@@ -58,8 +59,12 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
    }else if(/\bwhy\b/i.test(question)){
     const listing=radar.matches.find(m=>question.toLowerCase().includes(m.title.toLowerCase()))??lastListing.current??radar.matches[0];
     answer=listing?`${listing.title}: ${listing.reason}.`:"Run a scan first to see why a listing matched.";
-   }else if(/\b(?:perks|bundle|credits|free apis?)\b/i.test(question)&&!question.includes(".")){
-    setFilter("Perks");scrollTo(resultsRef.current);
+   }else if(/\b(?:perks|bundle|credits|free apis?)\b/i.test(question)&&(!question.includes(".")||/\s/.test(question))){
+    const {email:_email,...bundleProfile}=saved;
+    const res=await fetch("/api/assistant",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"builder_bundle",profile:bundleProfile})});
+    if(!res.ok)throw new Error("Builder bundle unavailable.");
+    setBundle(await res.json());setFilter("Perks");
+    requestAnimationFrame(()=>scrollTo(resultsRef.current));
     answer="I opened the Free builder bundle. Each item links to the provider’s current terms.";
    }else if(question.includes(".")&&!/\s/.test(question)){
     const res=await fetch("/api/assistant",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"analyze_company",company:question})});
@@ -89,6 +94,8 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
   catch{setCopy("Couldn’t copy. Select the text to copy it.");}
  }
  const shown=radar.matches.filter(m=>filter==="All"||m.kind===filter);
+ const shownBundle=filter==="Perks"?bundle:null;
+ const resultCount=shownBundle?.length??shown.length;
  function choose(m:Match){lastListing.current=m;setDraft(null);setCopy("");setDraftError("");setSelected(m);}
  return <div className="shell">
   <header><Link href="/" className="brand"><span aria-hidden>◎</span> Startfund</Link><span className="topline">FUNDING RADAR</span><Link className="secondary nav-link" href="/catalog">Funding catalog ↗</Link><button className="secondary" onClick={()=>setDigest(!digest)} aria-expanded={digest}>{digest?"Close digest":"Weekly digest ↗"}</button></header>
@@ -116,11 +123,14 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
      </form>
     </section>}
     <section className="panel results" ref={resultsRef} tabIndex={-1} aria-busy={pending}>
-     <div className="section-kicker">02 / DISCOVER</div><div className="result-title"><h2>Ranked opportunities</h2><span className="muted" aria-live="polite">{shown.length} matches</span></div>
+     <div className="section-kicker">02 / DISCOVER</div><div className="result-title"><h2>{shownBundle?"Free builder bundle":"Ranked opportunities"}</h2><span className="muted" aria-live="polite">{resultCount} {shownBundle?"perks":"matches"}</span></div>
      <p className="meta">For {saved.name} <span>·</span> Scanned {formatDate(radar.scannedAt)} UTC</p>
      <nav className="filters" aria-label="Filter opportunities">{(["All",...kinds] as const).map(x=><button type="button" key={x} className={filter===x?"selected":""} aria-pressed={filter===x} onClick={()=>setFilter(x)}>{x==="All"?x:names[x]}</button>)}</nav>
      {radar.warnings.length>0&&<p className="warning">{radar.warnings.join(" · ")}</p>}
-     <ul className="rows">{shown.map(m=><li key={m.id}><div className="rowmain">
+     <ul className="rows">{shownBundle ? shownBundle.map(item=><li key={item.id}><div className="rowmain">
+      <div className="rowtag">{item.source}</div><a className="rowtitle" href={item.url} target="_blank" rel="noreferrer">{item.title} ↗</a>
+      <p className="rowmeta">{item.eligibility}</p>
+     </div></li>) : shown.map(m=><li key={m.id}><div className="rowmain">
       <div className="rowtag">{m.kind} · {m.source} · {listingStatus(m)}</div>
       <button className="rowtitle" onClick={()=>choose(m)}>{m.title} <span aria-hidden>›</span></button>
       <div className="rowmeta">{m.opensAt&&listingStatus(m)==="Forthcoming"&&<span>Opens {formatDate(m.opensAt)}</span>}
@@ -129,7 +139,7 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
       </div>{m.regionNote&&<small className="warning">{m.regionNote}</small>}{m.prerequisites?.length?<small className="warning"> {m.prerequisites.join(" · ")}</small>:null}
       {m.kind==="Perks"&&<p className="rowmeta">{m.eligibility}</p>}
      </div><div className="score"><b>{m.score}%</b><span>FIT</span></div></li>)}</ul>
-     {!shown.length&&<p className="empty">{filter==="VC"?"No investor matches for this profile. Product launches aren’t investor opportunities.":"No matches in this view. Try another category or edit your profile."}</p>}
+     {!resultCount&&<p className="empty">{filter==="VC"?"No investor matches for this profile. Product launches aren’t investor opportunities.":"No matches in this view. Try another category or edit your profile."}</p>}
      {!!radar.evidence?.length&&<details><summary>Related past funding ({radar.evidence.length})</summary><ul className="fact-list">{radar.evidence.map(f=><li key={f.id}><a href={f.url} target="_blank" rel="noreferrer">{f.title} ↗</a><small>{f.source} · {f.kind} · Not open for applications</small></li>)}</ul></details>}
     </section>
    </div>
