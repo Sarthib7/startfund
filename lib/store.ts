@@ -146,6 +146,7 @@ export function mergeOpportunities(rows:Opportunity[]) {
     const current=byId.get(match.id)!;
     const timed=row.deadline?.includes("T") && row.deadline.slice(0,10)===current.deadline?.slice(0,10);
     byId.set(match.id,{...current,description:current.description??row.description,amount:current.amount??row.amount,
+      ...(!current.subdivisions?.length && row.subdivisions?.length ? {subdivisions:row.subdivisions}:{}),
       ...(timed?{deadline:row.deadline,status:row.status}:{})});
     byId.delete(row.id);
   }

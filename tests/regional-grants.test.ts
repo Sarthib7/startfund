@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { demo, listingStatus, opportunityLocation, profileSchema, rank, selectProfileRegion, shortlist, type Opportunity } from "../lib/domain";
-import { parseUkGovernmentGrants, sources } from "../lib/sources";
+import { parseInnovateUk, parseUkGovernmentGrants, sources } from "../lib/sources";
 import { mergeOpportunities } from "../lib/store";
 
 const at="2026-11-25T12:00:00Z";
@@ -85,6 +85,18 @@ test("cross-feed duplicate competitions keep the direct listing and exact deadli
  assert.equal(second.id,next.id);
  const sameUrl={...find,title:"Different spelling",url:innovate.url+"/?utm_source=find"};
  assert.deepEqual(mergeOpportunities([sameUrl,innovate]).map(o=>o.id),[innovate.id]);
+});
+
+test("a deduplicated Innovate UK competition retains the subdivision from Find a Grant",()=>{
+ const [find]=parseUkGovernmentGrants(html([{...sample,grantLocation:["Scotland"]}]),at).rows;
+ const innovate=parseInnovateUk(`<a href="/competition/2624/overview/0d597772-a841-4b82-ab80-51c09cda2206">${sample.grantName}</a><dl class="date-definition-list"><dt>Opened:</dt><dd>20 November 2026</dd><dt>Closes:</dt><dd>20 December 2026</dd></dl>`,at);
+ assert.equal(innovate.length,1);
+ const merged=mergeOpportunities([find,...innovate]);
+ assert.equal(merged.length,1);
+ assert.equal(merged[0].id,innovate[0].id);
+ assert.deepEqual(merged[0].subdivisions,["GB-SCT"]);
+ assert.equal(rank(merged,{...demo,companyCountry:"GB",companySubdivision:"GB-ENG"},Date.parse(at)).length,0);
+ assert.equal(rank(merged,{...demo,companyCountry:"GB",companySubdivision:"GB-SCT"},Date.parse(at)).length,1);
 });
 
 test("international UK Find a Grant listings reach UK teams when the publisher or invitation supports it",()=>{
