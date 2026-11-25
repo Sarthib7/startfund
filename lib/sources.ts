@@ -227,8 +227,9 @@ export function parseGermanFeed(xml:string) {
     if(listing.protocol!=="https:" || listing.host!==germanHost ||
       !/^\/FDB\/Content\/DE\/Foerderprogramm\/(?:Bund|Land)\/[\w/-]+\.html$/i.test(listing.pathname)) return [];
     const posted=Date.parse(field("pubDate"));
-    const grantType=/\b(?:mit Zuschüssen|als Zuschuss|einen Zuschuss (?:von|erhalten))\b/i.test(cleanText(field("description"),1000)??"");
-    return [{title,url:listing.origin+listing.pathname,postedAt:Number.isFinite(posted)?new Date(posted).toISOString().slice(0,10):undefined,grantType}];
+    const description=cleanText(field("description"),3500)??undefined;
+    const grantType=/\b(?:mit Zuschüssen|als Zuschuss|einen Zuschuss (?:von|erhalten))\b/i.test(description??"");
+    return [{title,description,url:listing.origin+listing.pathname,postedAt:Number.isFinite(posted)?new Date(posted).toISOString().slice(0,10):undefined,grantType}];
   });
   return [...new Map(entries.map(item=>[item.url,item])).values()];
 }

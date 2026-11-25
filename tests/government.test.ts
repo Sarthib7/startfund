@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { demo, profileSchema, rank, type Opportunity } from "../lib/domain";
+import { catalogMatch, demo, profileSchema, rank, type Opportunity } from "../lib/domain";
 import { parseGermanFeed, parseGermanGrant, parseTed, searchTed, sources } from "../lib/sources";
 import { save, saved } from "../lib/store";
 import { reader } from "../lib/transport";
@@ -16,7 +16,7 @@ const notice={
  "deadline-receipt-tender-date-lot":["2026-11-22+01:00","2026-12-15+01:00","2026-12-02+01:00"],
 };
 const feed=`<?xml version="1.0"?><rss version="2.0"><channel>
- <item><title><![CDATA[Energy &amp; manufacturing software]]></title><link>https://www.foerderdatenbank.de/FDB/Content/DE/Foerderprogramm/Land/NRW/energy.html?campaign=rss&amp;id=1</link><pubDate>Tue, 24 Nov 2026 15:41:00 +0100</pubDate></item>
+ <item><title><![CDATA[Energy &amp; manufacturing software]]></title><link>https://www.foerderdatenbank.de/FDB/Content/DE/Foerderprogramm/Land/NRW/energy.html?campaign=rss&amp;id=1</link><pubDate>Tue, 24 Nov 2026 15:41:00 +0100</pubDate><description><![CDATA[<p>Photonics and optics prototyping.</p>]]></description></item>
  <item><title>F&#246;rderung</title><link>https://www.foerderdatenbank.de/FDB/Content/DE/Foerderprogramm/Bund/BMDS/research.html</link><description>Der Bund unterstützt Unternehmen mit Zuschüssen.</description></item>
  <item><title>Untrusted</title><link>https://example.com/FDB/Content/DE/Foerderprogramm/Bund/BMDS/research.html</link></item>
  </channel></rss>`;
@@ -94,6 +94,10 @@ test("Förderdatenbank verifies subsidy type on federal and Länder details with
  assert.deepEqual(rows.map(o=>[o.kind,o.status,o.region,o.programme,o.deadline]),[
   ["Grant","Program link","DE","Nordrhein-Westfalen",null],["Grant","Program link","DE","Bundesweit",null],
  ]);
+ assert.equal(rows[0].description,"Photonics and optics prototyping.");
+ assert.equal(catalogMatch("photonics",rows[0].description??""),true);
+ const matches=rank(rows,{...demo,companySubdivision:"DE-NW",sector:"Photonics",description:"Photonics and optics prototyping"},Date.parse(at));
+ assert.ok(matches.find(o=>o.id===rows[0].id)?.matchedTerms?.includes("photonics"));
 });
 
 test("transport reads and reuses RSS as text rather than parsing JSON",async t=>{
