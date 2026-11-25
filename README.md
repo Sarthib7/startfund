@@ -14,7 +14,7 @@ Open http://localhost:3100. Requires Node.js 24+. Use `npm run dev` for developm
 ### Public deployment on Vercel
 
 1. Create a [Turso](https://turso.tech/) database on the free plan and a database auth token. Use a primary location near your Vercel functions.
-2. [Import the repository](https://vercel.com/new) as a Next.js project with Node.js 24 and `main` as the production branch. Keep the default repository root and the package's `npm run build` command (it builds eve and Next.js).
+2. [Import the repository](https://vercel.com/new) as a Next.js project with Node.js 24 and `main` as the production branch. Keep the default repository root and use `npm run build`. On Vercel, Next.js registers eve as a separate service through `withEve`; do not run `eve build` in the root build command. Local builds still build both.
 3. Set `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` for Production, and for Preview if you also want branch deployments (prefer a separate database for previews). Startfund creates its tables on first use. It does not fall back to ephemeral SQLite on Vercel; existing local data is not migrated.
 4. Deploy production and verify the production URL is accessible in a private browser without Vercel login; configure [Deployment Protection](https://vercel.com/docs/deployment-protection) as needed. `RADAR_SOURCE_CONTACT` enables SEC evidence. Model and Resend credentials are optional; the default public deployment uses template drafts and has no email delivery. Set `RADAR_EVE_URL` to the production origin if enabling model drafts, and use that origin for `RADAR_PUBLIC_ORIGIN` if enabling digest subscriptions.
 
