@@ -62,9 +62,9 @@ test("Grants.gov uses close and archive evidence, not posting age, and decodes t
  ]}},at);
  assert.equal(rolling.title,"Law & Science – rolling");
  assert.equal(rolling.deadline,null);
- assert.equal(rolling.status,"Rolling");
+ assert.equal(rolling.status,"Unknown");
  assert.equal(undated.postedAt,"2018-02-22");
- assert.equal(undated.status,"Rolling");
+ assert.equal(undated.status,"Unknown");
  assert.equal(expired.status,"Closed");
  assert.equal(archived.status,"Closed");
  assert.equal(archiveDate.status,"Closed");
@@ -76,16 +76,20 @@ test("Grants.gov checks old undated search results for actual proposal close dat
    ...Array.from({length:8},(_,i)=>({id:String(100+i),title:"Current notice",closeDate:"12/01/2026"})),
    {id:"300997",title:"EONS 2018",openDate:"02/22/2018",closeDate:"",oppStatus:"posted"},
    {id:"300998",title:"Undated award",openDate:"04/24/2018",closeDate:"",oppStatus:"posted"},
+   {id:"300999",title:"Unchecked award",openDate:"01/01/2019",oppStatus:"posted"},
+   {id:"301000",title:"No posting date",oppStatus:"posted"},
   ]}};
   const {opportunityId}=JSON.parse(String(init?.body));
   detailRequests.push(opportunityId);
-  return {data:{ost:"POSTED",synopsis:{awardCeiling:null,awardFloor:null,estimatedFunding:null,responseDateDesc:opportunityId===300997?
-    "Notice of Intent Due: March 23, 2018; Proposals Due: May 22, 2018 11:59 PM EST":undefined}}};
+  return {data:{ost:"POSTED",synopsis:{awardCeiling:null,awardFloor:null,estimatedFunding:null,responseDateDesc:opportunityId===300998?
+    undefined:"Notice of Intent Due: March 23, 2018; Proposals Due: May 22, 2018 11:59 PM EST"}}};
  },"biotechnology");
  assert.deepEqual(detailRequests,[300997,300998]);
  assert.equal(rows[8].status,"Closed");
  assert.equal(rows[8].deadline,"2018-05-22");
- assert.equal(rows[9].status,"Rolling");
+ assert.equal(rows[9].status,"Unknown");
+ assert.equal(rows[10].status,"Unknown");
+ assert.equal(rows[11].status,"Unknown");
 });
 test("US grants validate dates, URLs, and response status",()=>{
  assert.equal(grant.deadline,"2026-12-02");

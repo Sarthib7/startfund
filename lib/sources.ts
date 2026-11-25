@@ -69,7 +69,7 @@ export function parseUs(raw: unknown, fetchedAt: string): Opportunity[] {
     if(!r || (r.oppStatus && r.oppStatus.toLowerCase()!=="posted" && !usClosed(r.oppStatus)) || /^(?:rfi\b|request for information\b|noi\b|notice of intent\b)/i.test(r.title))return [];
     const title=cleanText(r.title,600)??r.title, today=fetchedAt.slice(0,10), postedAt=date(r.postDate??undefined)??date(r.openDate??undefined)??undefined;
     const deadline=usDeadline(usDate(r.closeDate),today), archived=usDate(r.archiveDate);
-    const status=usClosed(r.oppStatus)||(archived&&archived<=today)||(deadline&&deadline<today)?"Closed":deadline?"Open":"Rolling";
+    const status=usClosed(r.oppStatus)||(archived&&archived<=today)||(deadline&&deadline<today)?"Closed":deadline?"Open":"Unknown";
     return [{id:`us-${r.id}`,title,kind:"Grant",region:"US",source:"Grants.gov",url:`https://www.grants.gov/search-results-detail/${r.id}`,
       ...federalTerms(title,r.agencyCode,deadline,fetchedAt),status,postedAt,amount:null,currency:"USD",eligibility:null,fetchedAt}];
   });
@@ -120,7 +120,7 @@ export async function searchUs(at:string, read:Reader, keyword?:string) {
   const rows=parseUs(await post(read,"https://api.grants.gov/v1/api/search2",{
     rows:18,keyword:keyword??"small business",oppStatuses:"posted",eligibilities:keyword?"23|99":"23",
   }),at);
-  const undated=rows.filter(row=>row.status==="Rolling"&&row.postedAt)
+  const undated=rows.filter(row=>row.status==="Unknown"&&row.postedAt)
     .sort((a,b)=>a.postedAt!.localeCompare(b.postedAt!)).slice(0,2);
   const checked=new Map((await Promise.all(undated.map(row=>enrichUs(row,read)))).map(row=>[row.id,row]));
   return rows.map(row=>checked.get(row.id)??row);
