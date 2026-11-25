@@ -67,7 +67,7 @@ function profileTopics(subject:string) {
   return {words:new Map(topicWords(subject).map(word=>[stem(word),word])),phrases:relatedTopics(subject)};
 }
 const genericGrantWords=keywords("AI artificial intelligence software SaaS digital innovation innovative automated automation agencies phase seeking university research developing development high temperature data science technology hardware system systems design designer program federal university academic general project applied engineering implementation pilot tool testing test solutions advanced startup competitive standard technologies industrial applications device equipment process deep infrastructure SBIR STTR");
-const biomedical = /\b(?:health(?:care)?|medical|bio(?:tech\w*|medical)|clinical|therapeutic\w*|diagnostic\w*|pharma\w*|patient\w*)\b/i;
+const biomedical = /\b(?:health(?:care)?|medical|med[- ]?tech\w*|bio(?:tech\w*|medical)|clinical|therapeutic\w*|diagnostic\w*|pharma\w*|patient\w*)\b/i;
 const biomedicalGrant = /\b(?:nih|nidcr|nichd|nhlbi)\b/i;
 const grantTopic = /^(?:climate|energy|electricity|manufactur\w*|decarboni[sz]\w*|waste)$/i;
 const fintech = /\b(?:fintech|financial technolog\w*|bookkeeping|accounting (?:software|tools?|automation|platforms?)|cash[ -]?flow (?:forecast\w*|management|analysis)|open banking|(?:digital|electronic|mobile|instant|cross[- ]border) payments?|payment (?:systems?|platforms?|processing)|finance teams?|financial ERP)\b/i;
@@ -94,6 +94,16 @@ function grantTerms(o:Opportunity,p:Profile,profileText:string,words:Map<string,
 }
 function exclusiveApplicant(eligibility:string){
   return /\b(?:only|limited to|restricted to|must be)\s+(?:(?:accredited|eligible|public|private|designated|a|an|the)\s+)*(?:minority[- ]serving institutions?|MSIs?|non[- ]?profits?|universit(?:y|ies)|state governments?)\b|\b(?:minority[- ]serving institutions?|MSIs?|non[- ]?profits?|universit(?:y|ies)|state governments?)\s+(?:only|are the only eligible applicants)\b/i.test(eligibility);
+}
+function biomedicalStartupFit(o:Opportunity,restricted:boolean) {
+  const eligibility=o.eligibility??"";
+  const federal=o.source==="Grants.gov";
+  if(restricted || /\b(?:only|limited to|restricted to|must be)\s+(?:(?:an?|the|eligible|qualified)\s+)*(?:research|academic|educational|degree[- ]granting) institutions?\b|\b(?:research|academic|educational|degree[- ]granting) institutions?\s+(?:only|are the only eligible applicants)\b/i.test(eligibility))return "institution";
+  if(federal && /\b(?:[TK]\d{2}|F\d{2}|R25|research training|training grants?|career development award|fellowships?)\b/i.test(o.title))return "training";
+  if(/\b(?:small business(?:es| concerns?)?|startups?)\s+(?:(?:are|is)\s+)?(?:not eligible|ineligible|may not apply|cannot apply)\b|\b(?:excluding|except|other than)\s+(?:for\s+)?(?:small business(?:es| concerns?)?|startups?)\b/i.test(eligibility))return "ineligible";
+  const explicitlyEligible=/^\s*(?:U\.?S\.?\s+)?(?:small businesses|small business concerns|startups)\s*[.]?\s*$|\b(?:small businesses|small business concerns|startups)\s+(?:only|are eligible|may apply|can apply)\b|\b(?:only|open to|eligible applicants include)\s+(?:U\.?S\.?\s+)?(?:small businesses|small business concerns|startups)\b/i.test(eligibility);
+  if(o.id==="nsf-seed" || (federal && /\b(?:SBIR|STTR|Small Business Innovation Research|Small Business Technology Transfer)\b/i.test(o.title)) || explicitlyEligible)return "startup";
+  if(federal && /\b(?:R(?:01|03|21)|U01)\b/i.test(o.title))return "research";
 }
 export function relevantEvidence(facts: Fact[], profile: Profile): Fact[] {
   const subject = profile.sector + " " + profile.description;
@@ -132,6 +142,7 @@ export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[
   const day = new Date(now).toISOString().slice(0,10);
   const profileText = (p.sector + " " + p.description).toLowerCase();
   const {words,phrases}=profileTopics(profileText);
+  const biomedicalPreSeed=p.stage==="Pre-seed"&&biomedical.test(profileText);
   return items.filter(o => o.kind!=="Market signal" && p.needs.includes(o.kind) && listingStatus(o,day)!=="Closed")
     .map(o => {
       const text = (o.title + " " + (o.eligibility ?? "")).toLowerCase();
@@ -149,16 +160,23 @@ export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[
       const urgency = days <= 14 ? 5 : days <= 45 ? 2 : 0;
       const amount = o.amount ? Math.min(3, Math.log10(1 + o.amount)/2) : 0;
       const region = regionalNote(o,p);
+      const restricted=o.kind==="Grant" && exclusiveApplicant(o.eligibility??"");
+      const startupFit=biomedicalPreSeed && o.kind==="Grant" ? biomedicalStartupFit(o,restricted) : undefined;
+      const startupBoost=startupFit==="startup" && !region.note;
+      const startupAdjustment=startupBoost?22:startupFit==="research"?-18:startupFit==="training"?-25:0;
       const score = fit + (region.local ? 6 : region.note ? -16 : 0) + (stageFit ? 3 : 0) + urgency + amount -
-        (o.signal ? 4 : 0) - (listingStatus(o,day)==="Forthcoming" ? 10 : 0);
+        (o.signal ? 4 : 0) - (listingStatus(o,day)==="Forthcoming" ? 10 : 0) + startupAdjustment;
       const topic = domainMismatch ? "Biomedical grant outside your stated focus" : broadProgram ? "General startup program" :
         matchedTerms.length ? `Matched: ${matchedTerms.join(", ")}` : "No topical match";
       const needsPrior=o.prerequisites?.includes("Requires prior NIH SBIR/STTR award") && !p.priorNihAward;
       const needsTrial=o.prerequisites?.includes("Clinical trial required") && p.plansClinicalTrial!==true;
-      const restricted=o.kind==="Grant" && exclusiveApplicant(o.eligibility??"");
-      const cap = domainMismatch ? 15 : !broadProgram && !topicScore ? 20 : restricted ? 27 : needsPrior || needsTrial ? 36 : !broadProgram && topicScore===1 ? 57 : 99;
+      const cap = domainMismatch ? 15 : !broadProgram && !topicScore ? 20 : restricted || startupFit==="institution" || startupFit==="ineligible" ? 27 :
+        needsPrior || needsTrial ? 36 : startupFit==="training" ? 44 : startupFit==="research" ? 55 : !broadProgram && !startupBoost && topicScore===1 ? 57 : 99;
+      const startupNote=startupBoost?"Small-business funding mechanism":startupFit==="research"?"Research mechanism; lower priority for a pre-seed startup":
+        startupFit==="training"?"Training or career-development mechanism":startupFit==="institution"&&!restricted?"Institution-only eligibility":
+        startupFit==="ineligible"?"Small businesses are excluded by the listing":"";
       return {...o, score: Math.max(0,Math.round(Math.min(cap,score))), regionNote:region.note,matchedTerms,
-        reason: [topic, region.local ? "Matches your region" : region.note ?? "Global listing", ...(o.prerequisites??[]), restricted?"Applicant type is restricted; startups may not qualify":"", stageFit ? "Stage signal" : "", days <= 14 ? "Closing soon" : "", o.signal ? "News signal, not an open application" : "Confirm eligibility at the source"].filter(Boolean).join(" · ")};
+        reason: [topic, region.local ? "Matches your region" : region.note ?? "Global listing", ...(o.prerequisites??[]), restricted?"Applicant type is restricted; startups may not qualify":"", startupNote, stageFit ? "Stage signal" : "", days <= 14 ? "Closing soon" : "", o.signal ? "News signal, not an open application" : "Confirm eligibility at the source"].filter(Boolean).join(" · ")};
     }).sort((a,b) => b.score-a.score || (a.deadline ?? "9999").localeCompare(b.deadline ?? "9999") || a.id.localeCompare(b.id));
 }
 export function template(p: Profile, m: Match) {
