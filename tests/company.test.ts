@@ -16,4 +16,6 @@ test("company analysis obeys crawler-specific path rules and infers editable pub
  assert.equal(profile.sector,"Climate tech");
  assert.equal(profile.stage,"Pre-seed");
  assert.equal(profile.region,"DE");
+ assert.equal(profile.companyCountry,"DE");
+ assert.equal(inferCompany("","",new URL("https://example.fr")).companyCountry,"FR");
 });

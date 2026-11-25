@@ -1,13 +1,20 @@
 import { z } from "zod";
 import type { Fact } from "./facts";
 
-export const kinds = ["Grant", "Accelerator", "VC", "Perks", "Growth"] as const;
+export const kinds = ["Grant", "Tender", "Accelerator", "VC", "Perks", "Growth"] as const;
 export const regions = {US:"United States", DE:"Germany", UK:"United Kingdom", EU:"European Union", Other:"Other / Global"} as const;
+export const euCountryCodes={AT:"AUT",BE:"BEL",BG:"BGR",HR:"HRV",CY:"CYP",CZ:"CZE",DK:"DNK",EE:"EST",FI:"FIN",FR:"FRA",DE:"DEU",
+  GR:"GRC",HU:"HUN",IE:"IRL",IT:"ITA",LV:"LVA",LT:"LTU",LU:"LUX",MT:"MLT",NL:"NLD",PL:"POL",PT:"PRT",RO:"ROU",SK:"SVK",SI:"SVN",ES:"ESP",SE:"SWE"};
+const countryNames=new Intl.DisplayNames(["en"],{type:"region",fallback:"none"});
+const country=z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/).transform(code=>code==="UK"?"GB":code)
+  .refine(code=>/^[A-Z]{2}$/.test(code) && !["EU","UN","ZZ"].includes(code) && countryNames.of(code)!==undefined,"Enter a valid country code");
 export const profileSchema = z.object({
   name: z.string().trim().min(1).max(80),
   description: z.string().trim().min(1).max(400),
   stage: z.enum(["Idea", "Pre-seed", "Seed", "Growth"]),
   region: z.enum(regionsKeys()),
+  companyCountry: country.optional(),
+  developerCountries: z.array(country).max(8).optional(),
   sector: z.string().trim().min(1).max(80),
   needs: z.array(z.enum(kinds)).min(1).max(kinds.length),
   email: z.union([z.email().max(254), z.literal("")]).optional(),
@@ -24,7 +31,7 @@ export type Opportunity = {
   eligibility: string | null; fetchedAt: string; signal?: boolean; programId?: string; description?: string;
   status?: ListingStatus; opensAt?: string|null; programme?: string; postedAt?:string; generic?:boolean; contact?:string;
   verifiedAt?:string; noticeExpires?:string; deadlineNote?:string; applicationGuide?:string;
-  awardFloor?:number|null; programFunding?:number|null; prerequisites?:string[];
+  awardFloor?:number|null; programFunding?:number|null; prerequisites?:string[]; countries?:string[];
 };
 export type Match = Opportunity & { score: number; reason: string; regionNote?: string; matchedTerms?:string[] };
 export type Radar = { matches: Match[]; warnings: string[]; scannedAt: string; evidence?: Fact[] };
@@ -76,13 +83,20 @@ export function relevantEvidence(facts: Fact[], profile: Profile): Fact[] {
       (b.fact.observed??"").localeCompare(a.fact.observed??""))
     .map(({fact}) => fact);
 }
-function regionalNote(o: Opportunity, p: Profile) {
+export function profileLocations(p:Profile) {
+  const base=p.companyCountry ?? (p.region==="US" || p.region==="DE" ? p.region : p.region==="UK" ? "GB" : undefined);
+  const countries=[...new Set([...(base?[base]:[]),...(p.developerCountries??[])])];
+  return {countries,eu:(!p.companyCountry && p.region==="EU") || countries.some(c=>Object.hasOwn(euCountryCodes,c))};
+}
+function regionalNote(o: Opportunity, locations:ReturnType<typeof profileLocations>) {
   const text = o.eligibility ?? "";
   const restriction = text.match(/\b(UK|United Kingdom|EU|European Union|US|U\.S\.|United States)[- ](?:based[- ]only|only)\b|\bonly\s+(UK|United Kingdom|EU|European Union|US|U\.S\.|United States)\b/i);
   const label = restriction?.[1] ?? restriction?.[2];
   const region = label ? /^(?:uk|united kingdom)$/i.test(label) ? "UK" : /^(?:eu|european union)$/i.test(label) ? "EU" : "US" : o.region;
-  const local = region === p.region || (p.region==="DE" && region==="EU");
-  return { local, note: !local && region !== "Global" ?
+  const local=o.countries?.length ? o.countries.some(c=>locations.countries.includes(c)) :
+    region==="EU" ? locations.eu : locations.countries.includes(region==="UK"?"GB":region);
+  return { local, restricted:region!=="Global" || Boolean(o.countries?.length), note: !local && region !== "Global" ?
+    o.countries?.length ? `Place of performance: ${o.countries.join(", ")}` :
     label ? `${region}-only per source; outside your region` : `${region} call; check eligibility for your region` : undefined };
 }
 export function listingStatus(o:Opportunity,day=new Date().toISOString().slice(0,10)):ListingStatus {
@@ -103,8 +117,12 @@ export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[
   const profileText = (p.sector + " " + p.description).toLowerCase();
   const biomedical = /\b(?:health(?:care)?|medical|bio(?:tech\w*|medical)|clinical|therapeutic\w*|diagnostic\w*|pharma\w*|patient\w*)\b/;
   const {words,phrases}=profileTopics(profileText);
+  const locations=profileLocations(p);
+  const explicitLocation=Boolean(p.companyCountry || p.developerCountries?.length);
   return items.filter(o => o.kind!=="Market signal" && p.needs.includes(o.kind) && listingStatus(o,day)!=="Closed")
-    .map(o => {
+    .flatMap(o => {
+      const region = regionalNote(o,locations);
+      if(region.restricted && !region.local && (o.kind==="Tender" || (o.kind==="Grant" && explicitLocation))) return [];
       const text = (o.title + " " + (o.eligibility ?? "")).toLowerCase();
       const {overlap,related} = topicHits(text,words,phrases);
       const synopsis = topicHits(o.description ?? "",words,phrases);
@@ -118,7 +136,6 @@ export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[
       const days = o.deadline ? Math.max(0,(Date.parse(o.deadline)-Date.parse(day))/86400000) : Infinity;
       const urgency = days <= 14 ? 5 : days <= 45 ? 2 : 0;
       const amount = o.amount ? Math.min(3, Math.log10(1 + o.amount)/2) : 0;
-      const region = regionalNote(o,p);
       const score = fit + (region.local ? 6 : region.note ? -16 : 0) + (stageFit ? 3 : 0) + urgency + amount -
         (o.signal ? 4 : 0) - (listingStatus(o,day)==="Forthcoming" ? 10 : 0);
       const topic = domainMismatch ? "Biomedical grant outside your stated focus" : broadProgram ? "General startup program" :

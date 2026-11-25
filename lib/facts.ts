@@ -16,6 +16,8 @@ export const rights:Record<string,string>={
  "CORDIS":"European Commission reuse notice; project facts only, no third-party media.",
  "UKRI GtR":"Public research-funding facts with attribution; no investigator data displayed.",
  "Innovate UK":"From Innovate UK’s public Innovation Funding Service; factual competition metadata under the Open Government Licence, with links to original notices.",
+ "TED":"EU Publications Office TED Search API; published procurement facts and links to original notices.",
+ "Förderdatenbank":"German federal funding database; factual program metadata and official source links.",
  "Official program links":"Curated official links and factual program summaries; check terms and availability at the source.",
  "YC batches":"Third-party public index; derived batch and count only, no company records redistributed.",
  "SEC EDGAR":"Public SEC filings; link and factual issuer name only, no individual contacts.",

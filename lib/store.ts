@@ -2,8 +2,8 @@ import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { enrichUs, searchEu, searchUs, sources, type Source } from "./sources";
-import { byListingStatus, catalogMatch, listingStatus, profileQueries, relevantEvidence, rank, shortlist, type Opportunity, type Profile, type Radar } from "./domain";
+import { enrichUs, searchEu, searchTed, searchUs, sources, type Source } from "./sources";
+import { byListingStatus, catalogMatch, euCountryCodes, listingStatus, profileLocations, profileQueries, relevantEvidence, rank, shortlist, type Opportunity, type Profile, type Radar } from "./domain";
 import { factSources, rights, searchCordis, searchNsf, searchUkri, type Fact, type FactSource } from "./facts";
 import { reader, type Snapshot } from "./transport";
 import { perkScore } from "./programs";
@@ -147,7 +147,7 @@ function opportunityText(o:Opportunity){
 }
 export async function catalog(query:{q?:string; source?:string; limit?:number}={}){
   const term=query.q?.trim()??"", queryTerm=term.toLowerCase().match(/[a-z0-9][a-z0-9-]*/g)?.slice(0,6).join(" ")??"";
-  const topical = queryTerm && !/^(?:accelerator|grant|vc|perks|growth|nsf)$/i.test(queryTerm) ?
+  const topical = queryTerm && !/^(?:accelerator|grant|tender|vc|perks|growth|nsf)$/i.test(queryTerm) ?
     [...(!query.source||query.source==="Grants.gov"?[queriedUs(queryTerm)]:[]),...(!query.source||query.source==="EU Funding & Tenders"?[queriedEu(queryTerm)]:[])] : [];
   const [general,factWarnings,extra]=await Promise.all([
     Promise.all((Object.keys(sources) as Source[]).filter(n=>!query.source||n===query.source).map(sourceRows)),
@@ -169,20 +169,23 @@ export async function catalog(query:{q?:string; source?:string; limit?:number}={
 }
 export async function radar(p: Profile):Promise<Radar>{
   const terms=p.needs.includes("Grant") ? profileQueries(p) : [];
+  const tenderCountries=p.needs.includes("Tender") ? profileLocations(p).countries.filter(c=>Object.hasOwn(euCountryCodes,c)) : [];
   const evidenceTerms=terms.slice(0,2);
   const historical=evidenceTerms.flatMap(q=>[
     topicalRows("NSF Awards",q,(read,at)=>searchNsf(read,at,q)),
     topicalRows("CORDIS",q,(read,at)=>searchCordis(read,at,q)),
     topicalRows("UKRI GtR",q,(read,at)=>searchUkri(read,at,q).catch(()=>searchUkri(read,at,q.split(" ").at(-1)))),
   ]);
-  const [general,us,eu,facts]=await Promise.all([
-    Promise.all((Object.keys(sources) as Source[]).filter(name=>name!=="Hacker News").map(sourceRows)),
-    Promise.all(terms.map(queriedUs)),Promise.all(terms.map(queriedEu)),Promise.all(historical),
+  const [general,us,eu,tenders,facts]=await Promise.all([
+    Promise.all((Object.keys(sources) as Source[]).filter(name=>name!=="Hacker News" && name!=="TED").map(sourceRows)),
+    Promise.all(terms.map(queriedUs)),Promise.all(terms.map(queriedEu)),
+    Promise.all(tenderCountries.map(country=>topicalRows("TED","country:"+country,(read,at)=>searchTed(at,read,[country])))),
+    Promise.all(historical),
   ]);
   const usRows=mergeOpportunities(us.flatMap(result=>result.items.filter(o=>!o.prerequisites?.length && !/clinical trials?|\bNIH\b/i.test(o.title)).slice(0,5)));
   const enrich=await Promise.all(usRows.slice(0,12).map(row=>topicalRows("Grants.gov",row.id,async read=>[await enrichUs(row,read)])));
-  const all=mergeOpportunities([...general,...us,...eu,...enrich].flatMap(x=>x.items));
-  const warnings=[...new Set([...general,...us,...eu,...facts].flatMap(r=>r.warning?[r.warning]:[]))];
+  const all=mergeOpportunities([...general,...us,...eu,...tenders,...enrich].flatMap(x=>x.items));
+  const warnings=[...new Set([...general,...us,...eu,...tenders,...facts].flatMap(r=>r.warning?[r.warning]:[]))];
   return {matches:shortlist(rank(all,p)),evidence:relevantEvidence(facts.flatMap(r=>r.items),p).slice(0,8),warnings,scannedAt:new Date().toISOString()};
 }
 export async function builderBundle(profile?:Profile) {
