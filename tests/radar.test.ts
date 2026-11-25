@@ -19,6 +19,19 @@ test("EU calls keep future deadlines and exclude third-party URLs",()=>{
  assert.equal(parseEu({results:[row]},at)[0].deadline,"2027-04-01");
  assert.deepEqual(parseEu({results:[{...row,url:"https://other.net"},{...row,metadata:{...row.metadata,status:["closed"]}}]},at),[]);
 });
+test("competitive calls retain their own identity, URL, deadline and status",()=>{
+ const row=(id:string,status:string,start:string)=>({reference:id+"COMPETITIVE_CALLen",
+  url:`https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/opportunities/competitive-calls-cs/${id}`,
+  metadata:{type:["8"],identifier:["HORIZON-SHARED"],title:["Parent topic"],callccm2Id:[id],callTitle:[`Competition ${id}`],
+   status:[status],startDate:[start],deadlineDate:["2027-01-01"]}});
+ const first=row("1","31094502","2026-11-22"), second=row("2","31094501","2026-12-01"), third=row("3","31094503","2026-10-01");
+ const items=parseEu({results:[first,second,third]},at);
+ assert.deepEqual(items.map(o=>[o.id,o.title,o.url,o.status,o.opensAt]),[
+  ["eu-competitive-1","Competition 1",first.url,"Open","2026-11-22"],
+  ["eu-competitive-2","Competition 2",second.url,"Forthcoming","2026-12-01"],
+  ["eu-competitive-3","Competition 3",third.url,"Closed","2026-10-01"],
+ ]);
+});
 test("HN results are signals and unsafe links fall back to the discussion",()=>{
  const [result]=parseHn({hits:[{objectID:"123",title:"VC news",url:"javascript:evil()"}]},at,"VC");
  assert.equal(result.signal,true);

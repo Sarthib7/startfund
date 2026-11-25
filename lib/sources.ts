@@ -32,6 +32,7 @@ export function parseUs(raw: unknown, fetchedAt: string): Opportunity[] {
 const euRow = z.object({reference:str,url:str,metadata:z.object({
   title:z.array(str).min(1), deadlineDate:z.array(z.string()).optional(), status:z.array(z.string()),
   identifier:z.array(z.string()).optional(), startDate:z.array(z.string()).optional(),
+  type:z.array(z.string()).optional(), callccm2Id:z.array(z.string()).optional(), callTitle:z.array(z.string()).optional(),
   description:z.array(z.string()).optional(), descriptionByte:z.array(z.string()).optional(),
 })});
 export function parseEu(raw:unknown,fetchedAt:string):Opportunity[] {
@@ -51,11 +52,14 @@ export function parseEu(raw:unknown,fetchedAt:string):Opportunity[] {
       codes.includes("31094502") ? "Open" : null;
     if (!status) return [];
     const identifier = r.metadata.identifier?.[0];
-    const listing = identifier && /^[A-Z0-9-]+$/i.test(identifier) ? `https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/opportunities/topic-details/${identifier}` : url;
+    const competitive=r.metadata.type?.includes("8") || /COMPETITIVE_CALL/i.test(r.reference);
+    const key=competitive ? r.metadata.callccm2Id?.[0] ?? r.reference : identifier ?? r.reference;
+    const listing = !competitive && identifier && /^[A-Z0-9-]+$/i.test(identifier) ? `https://ec.europa.eu/info/funding-tenders/opportunities/portal/screen/opportunities/topic-details/${identifier}` : url;
     const programme = identifier?.startsWith("HORIZON") ? "Horizon Europe" : identifier?.startsWith("DIGITAL") ? "Digital Europe" : identifier?.startsWith("LIFE") ? "LIFE" : undefined;
     const eic=identifier?.match(/^HORIZON-EIC-(20\d{2})-ACCELERATOR-/)?.[1];
-    const title=eic ? `EIC Accelerator ${eic} — ${r.metadata.title[0]}` : r.metadata.title[0];
-    return [{id:`eu-${identifier || r.reference}`,title,kind:"Grant",region:"EU",source:"EU Funding & Tenders",url:listing,deadline,status,opensAt,programme,
+    const title=competitive ? r.metadata.callTitle?.[0] ?? r.metadata.title[0] :
+      eic ? `EIC Accelerator ${eic} — ${r.metadata.title[0]}` : r.metadata.title[0];
+    return [{id:`eu-${competitive?"competitive-":""}${key}`,title,kind:"Grant",region:"EU",source:"EU Funding & Tenders",url:listing,deadline,status,opensAt,programme,
       description:cleanText((r.metadata.description ?? r.metadata.descriptionByte ?? []).join(" "),4500)??undefined,amount:null,currency:"EUR",eligibility:null,fetchedAt}];
   });
 }
