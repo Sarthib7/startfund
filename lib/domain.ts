@@ -39,6 +39,7 @@ export type Opportunity = {
   verifiedAt?:string; noticeExpires?:string; deadlineNote?:string; applicationGuide?:string;
   awardFloor?:number|null; programFunding?:number|null; prerequisites?:string[]; countries?:string[]; subdivisions?:string[];
   cpvCodes?:string[]; cpvScope?:"procedure-and-lots";
+  targetStages?:Exclude<Profile["stage"],"Not sure">[]; focusTopics?:string[];
 };
 export type Match = Opportunity & { score: number; reason: string; regionNote?: string; matchedTerms?:string[] };
 export type Radar = { matches: Match[]; warnings: string[]; scannedAt: string; evidence?: Fact[] };
@@ -189,15 +190,20 @@ export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[
       const text = (o.title + " " + (o.eligibility ?? "")).toLowerCase();
       const {overlap,related} = topicHits(text,words,phrases);
       const synopsis = topicHits(o.description ?? "",words,phrases);
-      const matchedTerms=o.kind==="Grant"?grantTerms(o,p,profileText,words,phrases):
+      const curated=o.source==="Government program links" && o.status==="Program link";
+      const focus=curated ? topicHits((o.focusTopics??[]).join(" "),words,phrases) : undefined;
+      const grantMatches=o.kind==="Grant"?grantTerms(o,p,profileText,words,phrases):[];
+      const matchedTerms=o.kind==="Grant"?[...new Set([...grantMatches,...(focus?.overlap??[]),...(focus?.related??[])])]:
         [...new Set([...overlap,...related,...synopsis.related,...(synopsis.overlap.length>=2 ? synopsis.overlap : [])])];
       const topicScore = Math.min(4,keywords(matchedTerms.join(" ")).size);
       const broadProgram = o.kind==="Grant" ? region.local && o.status==="Program link" && o.generic===true :
         (o.generic ?? (o.source === "Accelerator directory" && Boolean(o.programId)));
       const early = p.stage === "Idea" || p.stage === "Pre-seed";
-      const stageFit = p.stage!=="Not sure" && (early ? /pre-seed|early.stage|phase i\b|accelerat/.test(text) : /scale|growth|phase ii\b/.test(text));
+      const stageFit = p.stage!=="Not sure" && (o.targetStages?.length ? o.targetStages.includes(p.stage) :
+        !curated && (early ? /pre-seed|early.stage|phase i\b|accelerat/.test(text) : /scale|growth|phase ii\b/.test(text)));
       const domainMismatch = o.kind === "Grant" && (biomedicalGrant.test(o.title)||/\bclinical trials?\b/i.test(o.title)) && !biomedical.test(profileText);
-      const fit = domainMismatch ? 4 : broadProgram ? 40 : topicScore===1 ? 43 : topicScore>1 ? 53 + topicScore*6 : 8;
+      const fit = domainMismatch ? 4 : curated ? (broadProgram?29:17)+topicScore*9 :
+        broadProgram ? 40 : topicScore===1 ? 43 : topicScore>1 ? 53 + topicScore*6 : 8;
       const days = o.deadline ? Math.max(0,(Date.parse(o.deadline)-Date.parse(day))/86400000) : Infinity;
       const urgency = days <= 14 ? 5 : days <= 45 ? 2 : 0;
       const amount = o.amount ? Math.min(3, Math.log10(1 + o.amount)/2) : 0;
@@ -205,19 +211,22 @@ export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[
       const startupFit=biomedicalPreSeed && o.kind==="Grant" ? biomedicalStartupFit(o,restricted) : undefined;
       const startupBoost=startupFit==="startup" && !region.note;
       const startupAdjustment=startupBoost?22:startupFit==="research"?-18:startupFit==="training"?-25:0;
-      const score = fit + (region.local ? 6 : region.note ? -16 : 0) + (stageFit ? 3 : 0) + urgency + amount -
+      const stageAdjustment=stageFit?(curated?11:3):curated && p.stage!=="Not sure" && o.targetStages?.length?-7:0;
+      const localAdjustment=region.local ? (curated && o.subdivisions?.length ? 14 : 6) : region.note ? -16 : 0;
+      const score = fit + localAdjustment + stageAdjustment + urgency + amount -
         (o.signal ? 4 : 0) - (listingStatus(o,asOf)==="Forthcoming" ? 10 : 0) + startupAdjustment;
-      const topic = domainMismatch ? "Biomedical grant outside your stated focus" : broadProgram ? "General startup program" :
-        matchedTerms.length ? `Matched: ${matchedTerms.join(", ")}` : "No topical match";
+      const topic = domainMismatch ? "Biomedical grant outside your stated focus" :
+        matchedTerms.length && (!broadProgram || curated) ? `Matched: ${matchedTerms.join(", ")}` :
+        broadProgram ? "General startup program" : "No topical match";
       const needsPrior=o.prerequisites?.includes("Requires prior NIH SBIR/STTR award") && !p.priorNihAward;
       const needsTrial=o.prerequisites?.includes("Clinical trial required") && p.plansClinicalTrial!==true;
       const cap = domainMismatch ? 15 : !broadProgram && !topicScore ? 20 : restricted || startupFit==="institution" || startupFit==="ineligible" ? 27 :
-        needsPrior || needsTrial ? 36 : startupFit==="training" ? 44 : startupFit==="research" ? 55 : !broadProgram && !startupBoost && topicScore===1 ? 57 : 99;
+        needsPrior || needsTrial ? 36 : startupFit==="training" ? 44 : startupFit==="research" ? 55 : !curated && !broadProgram && !startupBoost && topicScore===1 ? 57 : 99;
       const startupNote=startupBoost?"Small-business funding mechanism":startupFit==="research"?"Research mechanism; lower priority for a pre-seed startup":
         startupFit==="training"?"Training or career-development mechanism":startupFit==="institution"&&!restricted?"Institution-only eligibility":
         startupFit==="ineligible"?"Small businesses are excluded by the listing":"";
       return {...o, score: Math.max(0,Math.round(Math.min(cap,score))), regionNote:region.note,matchedTerms,
-        reason: [topic, region.local ? "Matches your region" : region.note ?? "Global listing", ...(o.prerequisites??[]), restricted?"Applicant type is restricted; startups may not qualify":"", startupNote, stageFit ? "Stage signal" : "", days <= 14 ? "Closing soon" : "", o.signal ? "News signal, not an open application" : "Confirm eligibility at the source"].filter(Boolean).join(" · ")};
+        reason: [topic, region.local ? (curated && o.subdivisions?.length ? "Matches your state or region" : "Matches your region") : region.note ?? "Global listing", ...(o.prerequisites??[]), restricted?"Applicant type is restricted; startups may not qualify":"", startupNote, stageFit ? (curated ? "Matches your stage" : "Stage signal") : "", days <= 14 ? "Closing soon" : "", o.signal ? "News signal, not an open application" : "Confirm eligibility at the source"].filter(Boolean).join(" · ")};
     }).sort((a,b) => b.score-a.score || (a.deadline ?? "9999").localeCompare(b.deadline ?? "9999") || a.id.localeCompare(b.id));
 }
 export function template(p: Profile, m: Match) {

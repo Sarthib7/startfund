@@ -31,6 +31,7 @@ export async function sourceRows(name: Source) {
     const current = name==="Hacker News" ? stored.every(o=>o.kind==="Market signal") :
       name==="EU Funding & Tenders" || name==="Grants.gov" ? stored.every(o=>o.status) :
       name==="Accelerator directory" ? stored.every(o=>o.kind!=="Growth") :
+      name==="Government program links" ? stored.every(o=>o.focusTopics) :
       name==="TED" ? stored.every(hasCompleteTenderCpv) : true;
     if (previous && current && Date.now()-Date.parse(previous.scanned) < ttl) return {items: stored};
     const at = new Date().toISOString();

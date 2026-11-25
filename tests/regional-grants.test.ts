@@ -98,3 +98,16 @@ test("international UK Find a Grant listings reach UK teams when the publisher o
  assert.deepEqual(rank(rows,{...demo,companyCountry:"GB"},Date.parse(at)).map(r=>r.id).sort(),["gb-find-aria-1","gb-find-invited-1"]);
  assert.deepEqual(rank(rows,{...demo,companyCountry:"IN"},Date.parse(at)),[]);
 });
+
+test("curated grant fit differentiates scope, stage and sector for the same founder",async()=>{
+ const items=await sources["Government program links"](at);
+ const founder={...demo,companySubdivision:"IN-KA",sector:"Technology",description:"Building a proof of concept and prototype."};
+ const early=rank(items,founder,Date.parse(at));
+ const elevate=early.find(row=>row.id==="in-elevate")!;
+ const seed=early.find(row=>row.id==="in-seed-fund")!;
+ assert.ok(elevate.score>seed.score);
+ assert.match(elevate.reason,/Matches your state or region.*Matches your stage/);
+ assert.ok(seed.score>rank(items,{...founder,stage:"Growth"},Date.parse(at)).find(r=>r.id===seed.id)!.score);
+ const biotech=rank(items,{...founder,sector:"Biotechnology",description:"Developing healthcare medical devices."},Date.parse(at));
+ assert.ok(biotech.find(r=>r.id==="in-birac")!.score>early.find(r=>r.id==="in-birac")!.score);
+});

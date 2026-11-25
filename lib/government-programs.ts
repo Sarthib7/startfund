@@ -26,11 +26,40 @@ const programs:Program[]=[
  ["au-igp","Australia Industry Growth Program","AU","AUD","https://business.gov.au/Grants-and-Programs/Industry-Growth-Program","Commercialisation and growth grants for innovative SMEs in priority industry areas.","Check Australian registration, advisory prerequisites and current availability."],
  ["sg-founder","Startup SG Founder","SG","SGD","https://www.startupsg.gov.sg/programmes/4894/startup-sg-founder","Startup grant and mentorship for eligible first-time entrepreneurs.","Check Singapore incorporation, founder and accredited mentor requirements.",true],
 ];
+type Focus=[Opportunity["targetStages"],string[],number?];
+const focus:Record<string,Focus>={
+ "fr-french-tech":[["Idea","Pre-seed"],["feasibility","prototype","deep tech"],30_000],
+ "fr-2030":[undefined,["industrial decarbonisation","clean energy","manufacturing","healthcare","digital technology"]],
+ "fr-innovup":[["Pre-seed","Seed"],["feasibility","experimentation","prototype","product development"]],
+ "in-seed-fund":[["Idea","Pre-seed"],["proof of concept","prototype","product trials"]],
+ "in-nidhi":[["Pre-seed","Seed"],["prototype","product development","commercialization"]],
+ "in-birac":[["Idea","Pre-seed"],["biotechnology","medical devices","healthcare"],5_000_000],
+ "in-elevate":[["Pre-seed","Seed"],["proof of concept","prototype","technology"]],
+ "in-ksum":[["Idea","Pre-seed","Seed"],["prototype","product development","commercialization"]],
+ "in-tanseed":[["Pre-seed","Seed"],["prototype","product development","commercialization"]],
+ "gb-scot-scale":[["Seed","Growth"],["commercialization","product implementation","scale-up"]],
+ "gb-wales-smart":[undefined,["research","product development","commercialisation"]],
+ "gb-ni-innovation":[undefined,["research","product development","commercialisation"]],
+ "gb-eng-rural":[["Seed","Growth"],["rural enterprise","capital investment"]],
+ "us-ca-epic":[["Seed","Growth"],["clean energy","electricity","energy efficiency","climate technology"]],
+ "us-ca-grants":[undefined,[]],
+ "us-ny-img":[["Seed","Growth"],["product commercialization","research","SBIR","STTR"]],
+ "us-ma-start":[["Seed","Growth"],["product commercialization","research","SBIR","STTR"]],
+ "us-tx-step":[["Growth"],["export","international trade"]],
+ "us-wa-step":[["Growth"],["export","international business development"]],
+ "ie-voucher":[["Pre-seed","Seed"],["technical research","product development"]],
+ "es-neotec":[["Pre-seed","Seed"],["proprietary technology","technology commercialization"]],
+ "au-igp":[["Seed","Growth"],["commercialisation","priority industry","manufacturing"]],
+ "sg-founder":[["Idea","Pre-seed"],["first-time entrepreneurs","mentorship"]],
+};
 
 export function governmentProgramRows(fetchedAt:string):Opportunity[] {
- return programs.map(([id,title,location,currency,url,description,eligibility,generic])=>({
+ return programs.map(([id,title,location,currency,url,description,eligibility,generic])=>{
+  const [targetStages,focusTopics,amount]=focus[id];
+  return {
   id,title,kind:"Grant",region:"Global",countries:[location.slice(0,2)],
   ...(location.includes("-")?{subdivisions:[location]}:{}),currency,url,description,eligibility,generic,
-  programme:location,source:"Government program links",status:"Program link",amount:null,deadline:null,fetchedAt,
- }));
+  programme:location,source:"Government program links",status:"Program link",targetStages,focusTopics,amount:amount??null,deadline:null,fetchedAt,
+  };
+ });
 }
