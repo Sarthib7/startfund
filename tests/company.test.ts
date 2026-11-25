@@ -16,6 +16,9 @@ test("company analysis obeys crawler-specific path rules and infers editable pub
  assert.equal(profile.sector,"Climate tech");
  assert.equal(profile.stage,"Pre-seed");
  assert.equal(profile.region,"DE");
+ const german=inferCompany('<html lang="de"><title>Sauberer Strom | 1KOMMA5°</title><h1>Solar und Wärmepumpen</h1>',"",new URL("https://1komma5.com/de/"));
+ assert.equal(german.name,"1KOMMA5°");
+ assert.equal(german.region,"DE");
 });
 test("company reader checks robots again at the redirected host and accepts successful HTML",async()=>{
  const calls:string[]=[];

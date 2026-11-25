@@ -59,13 +59,13 @@ export async function readCompanyPages(start:URL,read=webPage) {
   }
   async function check(url:URL){
     if(!policies.has(url.origin)){
-      const {page}=await follow(new URL("/robots.txt",url),40_000);
+      const {page}=await follow(new URL("/robots.txt",url),640_000);
       if(!ok(page.status)&&![404,410].includes(page.status))throw new Error("Website does not allow automated reading");
-      policies.set(url.origin,page.body);
+      policies.set(url.origin,/^\s*(?:<!doctype html|<html\b)/i.test(page.body)?"":page.body);
     }
     if(!robotsAllows(policies.get(url.origin)!,url.pathname+url.search))throw new Error("Website does not allow automated reading");
   }
-  const {page:home,url}=await follow(start,400_000,check);
+  const {page:home,url}=await follow(start,640_000,check);
   if(!ok(home.status)||!home.body)throw new Error("Website could not be read");
   const aboutPath=home.body.match(/href=["'](\/(?:about(?:-us)?|company)\/?)["']/i)?.[1];
   const about=aboutPath ? await follow(new URL(aboutPath,url),250_000,check).then(({page})=>ok(page.status)?page.body:"").catch(()=>"") : "";
@@ -101,12 +101,15 @@ function metadata(html:string,keys:string[]) {
 }
 export function inferCompany(html:string,about:string,url:URL) {
   const title=cleanText(metadata(html,["og:title"]) || html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1],200)??url.hostname;
-  const brand=metadata(html,["og:site_name"])||title.split(/[|—]/,1)[0];
+  const titleParts=title.split(/[|—▶]/).map(part=>part.trim());
+  const hostBrand=url.hostname.replace(/^www\./,"").split(".")[0].replace(/[^\p{L}\p{N}]/gu,"");
+  const brand=metadata(html,["og:site_name"])||
+    titleParts.find(part=>part.toLowerCase().replace(/[^\p{L}\p{N}]/gu,"")===hostBrand)||titleParts[0];
   const heading=html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i)?.[1];
   const description=cleanText(metadata(html,["description","og:description"]) || metadata(about,["description","og:description"]) ||
     [heading,about.match(/<p\b[^>]*>([\s\S]*?)<\/p>/i)?.[1]].filter(Boolean).join(". "),400)??"";
   const text=`${title} ${description}`;
-  const sector=/\b(climate|decarbon\w*|solar|renewable|clean energy)\b/i.test(text)?"Climate tech":
+  const sector=/\b(climate|decarbon\w*|solar|renewable|clean energy|green hydrogen|electroly[sz]\w*|wärmepump\w*|photovolta\w*)\b/i.test(text)?"Climate tech":
     /\b(biotech\w*|therapeutic\w*|genomic\w*)\b/i.test(text)?"Biotechnology":
     /\b(fintech|banking|payments|ERP|finance teams?)\b/i.test(text)?"Fintech / B2B SaaS":
     /\b(manufactur\w*|industrial)\b/i.test(text)?"Manufacturing":
