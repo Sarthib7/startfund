@@ -41,6 +41,17 @@ test("grant evidence matches core sectors, not disbursements, clinical labels or
  assert.ok(restricted.score<30);
  assert.match(restricted.reason,/Applicant type is restricted/);
 });
+test("heat-pump profiles keep broader clean-energy grants without the core-topic boost",()=>{
+ const nsf=curatedProgramRows(at).find(row=>row.id==="nsf-seed")!;
+ const core={...grant,id:"heat-pump",region:"DE" as const,title:"Industrial heat pump pilot"};
+ for(const sector of ["Climate hardware","Clean energy"]){
+  const profile={...demo,region:"DE" as const,sector,description:"Heat pumps for industrial process heat and decarbonization."};
+  const matches=shortlist(rank([nsf,core],profile,Date.parse(at)));
+  assert.deepEqual(matches.map(row=>row.id),["heat-pump","nsf-seed"]);
+  assert.deepEqual(matches[1].matchedTerms,["clean energy"]);
+  assert.ok(matches[1].score<=49);
+ }
+});
 test("Grants.gov uses close and archive evidence, not posting age, and decodes title entities",()=>{
  const [rolling,undated,expired,archived,archiveDate]=parseUs({errorcode:0,data:{oppHits:[
   {id:"41",title:"Law &amp; Science &ndash; rolling",closeDate:"10/15/2076"},
