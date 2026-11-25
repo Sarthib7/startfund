@@ -4,6 +4,7 @@ import { catalogMatch, demo, profileQueries, rank, shortlist, template, type Opp
 import { digestHtml } from "../lib/digest";
 import { parseEu, parseHn, parseInnovateUk, parseUs } from "../lib/sources";
 import { cordisFacts, nsfFacts, secFacts, ukriFact, ycFacts } from "../lib/facts";
+import { curatedProgramRows } from "../lib/programs";
 
 const at="2026-11-25T12:00:00Z";
 const [grant]=parseUs({errorcode:0,data:{oppHits:[{id:"12",title:"Energy software Phase I",closeDate:"12/02/2026"}]}},at);
@@ -89,6 +90,33 @@ test("category reservations do not add off-topic signals or grants",()=>{
  const growth={...grant,id:"news",kind:"Growth" as const,title:"New smartphone announced",signal:true};
  const matches=rank([growth,{...grant,id:"nih",title:"NIH energy software Phase I trial"},grant],demo,Date.parse(at));
  assert.deepEqual(shortlist(matches).map(m=>m.id),[grant.id]);
+});
+test("LedgerFlow needs real fintech scope, not generic grant language or applicant eligibility",()=>{
+ const ledger={...demo,name:"LedgerFlow",sector:"Fintech SaaS",description:"Automated bookkeeping and cashflow forecasting SaaS for freelance designers and small agencies"};
+ const listing=(id:string,title:string,patch:Partial<Opportunity>={}):Opportunity=>({...grant,id,title,...patch});
+ const rows=[
+  listing("tuna","SEFSC Bluefin Tuna Research Program",{eligibility:"Federal agencies or institutions are not eligible."}),
+  listing("cipher","CIPHER Open Call 1",{description:"Test an automated cyber security SaaS platform."}),
+  listing("materials","Automated Scientific Discovery — Materials Science",{description:"Materials designers run automated experiments."}),
+  listing("mission","General AI and Software Innovation",{description:"AI software innovation for small businesses.",eligibility:"Financial technology businesses may apply."}),
+  listing("finance","Pilot for cash flow forecasting",{description:"Research grants for small businesses testing accounting tools."}),
+  ...curatedProgramRows(at),
+ ];
+ assert.deepEqual(shortlist(rank(rows,ledger,Date.parse(at))).filter(m=>m.kind==="Grant").map(m=>m.id),["finance"]);
+ assert.ok(!shortlist(rank(rows,{...ledger,sector:"Fintech AI software innovation"},Date.parse(at))).some(m=>m.id==="mission"));
+});
+test("the top ten still include climate grants and parent NIH awards with real scope",()=>{
+ const curated=curatedProgramRows(at);
+ const genesis={...grant,id:"genesis",title:"The Genesis Mission: Transforming Science and Energy with AI",description:"Advanced manufacturing and biotechnology are listed topic areas."};
+ const nasa={...grant,id:"nasa",title:"NASA University Research and Education",description:"University teams compete for Phase I SBIR and STTR."};
+ const nih=[{...grant,id:"nih-sbir",title:"NIH Parent SBIR (Clinical Trial Optional)"},
+   {...grant,id:"nih-sttr",title:"NIH Parent STTR (Clinical Trial Optional)"}];
+ const top=(profile:typeof demo)=>shortlist(rank([genesis,nasa,...nih,...curated],profile,Date.parse(at))).slice(0,10).map(m=>m.id);
+ assert.ok(["genesis","nsf-seed"].every(id=>top(demo).includes(id)));
+ const biotech={...demo,name:"Biotech Lab",sector:"Biotechnology",description:"University spinout commercializing biotechnology and seeking Phase I SBIR STTR."};
+ const biotechTop=top(biotech);
+ assert.ok(["nsf-seed","nih-sbir","nih-sttr"].every(id=>biotechTop.includes(id)));
+ assert.ok(!biotechTop.includes("nasa"));
 });
 test("profile queries expand energy and manufacturing without sending the name or email",()=>{
  const queries=profileQueries({...demo,email:"founder@example.com"});

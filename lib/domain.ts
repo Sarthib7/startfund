@@ -66,6 +66,24 @@ function topicHits(text: string, tokens: Map<string,string>, phrases: string[]) 
 function profileTopics(subject:string) {
   return {words:new Map(topicWords(subject).map(word=>[stem(word),word])),phrases:relatedTopics(subject)};
 }
+const genericGrantWords=keywords("AI artificial intelligence software SaaS digital innovation innovative automated automation agencies phase seeking university research");
+const biomedical = /\b(?:health(?:care)?|medical|bio(?:tech\w*|medical)|clinical|therapeutic\w*|diagnostic\w*|pharma\w*|patient\w*)\b/i;
+const biomedicalGrant = /\b(?:nih|nidcr|nichd|nhlbi|clinical trials?)\b/i;
+const grantTopic = /^(?:climate|energy|electricity|manufactur\w*|decarboni[sz]\w*|waste)$/i;
+const fintech = /\b(?:fintech|financial technolog\w*|bookkeeping|accounting|cash[ -]?flow|open banking|payments?)\b/i;
+function grantTerms(o:Opportunity,p:Profile,profileText:string,words:Map<string,string>,phrases:string[]) {
+  const scope=o.title+" "+(o.description??"");
+  const sector=new Map([...keywords(p.sector)].filter(word=>!genericGrantWords.has(word)).map(word=>[word,words.get(word)??word]));
+  const scopeHits=topicHits(scope,words,phrases);
+  const fintechHit=fintech.test(profileText) ? scope.match(fintech)?.[0] : undefined;
+  const sectorHits=topicHits(scope,sector,[]).overlap;
+  const biomedicalHits=biomedical.test(profileText) ? [...(o.title.match(biomedicalGrant)??[]).slice(0,1),...(scope.match(biomedical)??[]).slice(0,1)] : [];
+  const qualifying=[...sectorHits,...scopeHits.related,...scopeHits.overlap.filter(term=>grantTopic.test(term)),
+    ...(fintechHit?[fintechHit]:[]),...biomedicalHits].map(term=>term.toLowerCase());
+  if(!qualifying.length) return [];
+  const terms=[...qualifying,...scopeHits.overlap.filter(term=>!genericGrantWords.has(stem(term)))];
+  return [...new Map(terms.map(term=>[stem(term),term])).values()];
+}
 export function relevantEvidence(facts: Fact[], profile: Profile): Fact[] {
   const subject = profile.sector + " " + profile.description;
   const {words,phrases}=profileTopics(subject);
@@ -101,19 +119,19 @@ export function catalogMatch(query:string,text:string) {
 export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[] {
   const day = new Date(now).toISOString().slice(0,10);
   const profileText = (p.sector + " " + p.description).toLowerCase();
-  const biomedical = /\b(?:health(?:care)?|medical|bio(?:tech\w*|medical)|clinical|therapeutic\w*|diagnostic\w*|pharma\w*|patient\w*)\b/;
   const {words,phrases}=profileTopics(profileText);
   return items.filter(o => o.kind!=="Market signal" && p.needs.includes(o.kind) && listingStatus(o,day)!=="Closed")
     .map(o => {
       const text = (o.title + " " + (o.eligibility ?? "")).toLowerCase();
       const {overlap,related} = topicHits(text,words,phrases);
       const synopsis = topicHits(o.description ?? "",words,phrases);
-      const matchedTerms=[...new Set([...overlap,...related,...synopsis.related,...(synopsis.overlap.length>=2 ? synopsis.overlap : [])])];
+      const matchedTerms=o.kind==="Grant"?grantTerms(o,p,profileText,words,phrases):
+        [...new Set([...overlap,...related,...synopsis.related,...(synopsis.overlap.length>=2 ? synopsis.overlap : [])])];
       const topicScore = Math.min(4,keywords(matchedTerms.join(" ")).size);
-      const broadProgram = o.generic ?? (o.source === "Accelerator directory" && Boolean(o.programId));
+      const broadProgram = o.kind!=="Grant" && (o.generic ?? (o.source === "Accelerator directory" && Boolean(o.programId)));
       const early = p.stage === "Idea" || p.stage === "Pre-seed";
       const stageFit = early ? /pre-seed|early.stage|phase i\b|accelerat/.test(text) : /scale|growth|phase ii\b/.test(text);
-      const domainMismatch = o.kind === "Grant" && /\b(?:nih|nidcr|clinical trials?)\b/i.test(o.title) && !biomedical.test(profileText);
+      const domainMismatch = o.kind === "Grant" && biomedicalGrant.test(o.title) && !biomedical.test(profileText);
       const fit = domainMismatch ? 4 : broadProgram ? 40 : topicScore===1 ? 43 : topicScore>1 ? 53 + topicScore*6 : 8;
       const days = o.deadline ? Math.max(0,(Date.parse(o.deadline)-Date.parse(day))/86400000) : Infinity;
       const urgency = days <= 14 ? 5 : days <= 45 ? 2 : 0;
