@@ -111,9 +111,10 @@ export function listingStatus(o:Opportunity,day=new Date().toISOString().slice(0
 }
 const statusOrder:Record<ListingStatus,number>={Open:0,"Late applications":0,Forthcoming:1,"Program link":2,Closed:3};
 export const byListingStatus=(a:Opportunity,b:Opportunity)=>statusOrder[listingStatus(a)]-statusOrder[listingStatus(b)];
+export const catalogWords=(text:string)=>(text.toLowerCase().match(/[\p{L}\p{N}]+/gu)??[]).map(stem);
 export function catalogMatch(query:string,text:string) {
-  const words=new Set((text.toLowerCase().match(/[\p{L}\p{N}]+/gu)??[]).map(stem));
-  return (query.toLowerCase().match(/[\p{L}\p{N}]+/gu)??[]).every(word=>words.has(stem(word)));
+  const words=new Set(catalogWords(text));
+  return catalogWords(query).every(word=>words.has(word));
 }
 
 export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[] {

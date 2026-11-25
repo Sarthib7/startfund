@@ -46,7 +46,7 @@ export async function POST(request:Request){
  const input=z.object({id:z.string().min(1).max(160)}).safeParse(await request.json().catch(()=>null));
  if(!input.success) return Response.json({error:"Invalid listing"},{status:400});
  const id=(await cookies()).get("startfund-profile")?.value;
- const record=id ? saved(id) : null;
+ const record=id ? await saved(id) : null;
  const profile=record?.profile ?? demo;
  const snapshot=record?.digest?.evidence ? record.digest : await radar(profile);
  const match=snapshot.matches.find(m=>m.id===input.data.id);
