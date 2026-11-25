@@ -8,8 +8,10 @@ export function billingConfig(){
  return secretKey&&webhookSecret&&priceId?{secretKey,webhookSecret,priceId}:null;
 }
 
-const entitlement=`EXISTS (SELECT 1 FROM billing_subscriptions s
- WHERE s.customer=c.customer AND s.status IN ('active','trialing'))`;
+const subscriptionExists=(statuses:string)=>`EXISTS (SELECT 1 FROM billing_subscriptions s
+ WHERE s.customer=c.customer AND s.status IN (${statuses}))`;
+const entitlement=subscriptionExists("'active','trialing'");
+const canRestore=subscriptionExists("'active','trialing','past_due','unpaid'");
 const hashKey=(key:string)=>createHash("sha256").update(key).digest("hex");
 const keyPattern=/^sf_pro_[A-Za-z0-9_-]{43}$/;
 
@@ -47,8 +49,8 @@ export async function claimProKey(visitor:string){
  return updated?key:null;
 }
 
-export async function visitorForProKey(key:string){
+export async function visitorForProKey(key:string,purpose:"api"|"restore"="api"){
  if(!keyPattern.test(key))return null;
- const [row]=await (await db()).all(`SELECT visitor FROM billing_customers c WHERE key_hash=? AND ${entitlement}`,hashKey(key));
+ const [row]=await (await db()).all(`SELECT visitor FROM billing_customers c WHERE key_hash=? AND ${purpose==="restore"?canRestore:entitlement}`,hashKey(key));
  return row?String(row.visitor):null;
 }

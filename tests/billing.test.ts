@@ -117,7 +117,20 @@ test("signed Stripe events drive shared Pro quotas, one-time recovery, and Porta
   assert.equal((await handlers.webhook(event("evt_failed","invoice.payment_failed",102,invoice))).status,200);
   assert.equal((await usageIdentity(statusRequest(cookie)))?.plan,"Free");
   assert.equal(await usageIdentity(apiRequest),null);
-  assert.equal((await handlers.browser(request("restore",undefined,{key}),"restore")).status,401);
+  for(const status of ["past_due","unpaid"]){
+   if(status==="unpaid"){
+    subscriptionStatus=status;
+    assert.equal((await handlers.webhook(event("evt_unpaid","customer.subscription.updated",102,sub))).status,200);
+   }
+   const recovery=await handlers.browser(request("restore",undefined,{key}),"restore");
+   assert.equal(recovery.status,200,status);
+   const billingCookie=recovery.headers.get("set-cookie")!.split(";")[0];
+   const identity=await usageIdentity(statusRequest(billingCookie));
+   assert.equal(identity?.actor,owner.actor,status);
+   assert.equal(identity?.plan,"Free",status);
+   assert.equal(await usageIdentity(apiRequest),null,status);
+   assert.deepEqual(await (await handlers.browser(request("portal",billingCookie),"portal")).json(),{url:"https://billing.stripe.test/manage"});
+  }
   subscriptionStatus="active";
   assert.equal((await handlers.webhook(event("evt_active","customer.subscription.updated",103,sub))).status,200);
   assert.equal((await billingAccount(visitor))?.pro,true);
@@ -127,8 +140,9 @@ test("signed Stripe events drive shared Pro quotas, one-time recovery, and Porta
   assert.equal((await handlers.webhook(event("evt_late","customer.subscription.updated",104,sub))).status,200);
   assert.equal((await billingAccount(visitor))?.pro,false);
   assert.equal((await usageIdentity(statusRequest(restoredCookie)))?.plan,"Free");
+  assert.equal((await handlers.browser(request("restore",undefined,{key}),"restore")).status,401);
   const [count]=await (await db()).all("SELECT count(*) AS n FROM billing_events");
-  assert.equal(Number(count.n),5);
+  assert.equal(Number(count.n),6);
  }finally{
   delete process.env.STRIPE_SECRET_KEY;
   delete process.env.STRIPE_WEBHOOK_SECRET;

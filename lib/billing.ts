@@ -62,8 +62,8 @@ export function billingHandlers(config:Config|null=billingConfig(),stripe=config
     });
     if(action==="restore"){
      const input=await request.json().catch(()=>null);
-     const visitor=typeof input?.key==="string"?await visitorForProKey(input.key.trim()):null;
-     if(!visitor)return json({error:"This key doesn’t have an active Pro subscription."},401);
+     const visitor=typeof input?.key==="string"?await visitorForProKey(input.key.trim(),"restore"):null;
+     if(!visitor)return json({error:"This key can’t restore a billing account."},401);
      const response=json({ok:true});
      response.headers.append("Set-Cookie",await restoreVisitorCookie(request,visitor));
      return response;
