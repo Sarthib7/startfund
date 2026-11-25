@@ -24,10 +24,11 @@ test("HN results are signals and unsafe links fall back to the discussion",()=>{
  assert.equal(result.signal,true);
  assert.equal(result.url,"https://news.ycombinator.com/item?id=123");
 });
-test("ranking rewards relevant, urgent listings and filters expired, regions and needs",()=>{
+test("ranking rewards urgency and local eligibility, flags other regions and filters expired or unrequested listings",()=>{
  const variant=(id:string,patch:Partial<Opportunity>):Opportunity=>({...grant,id,...patch});
  const matches=rank([variant("later",{deadline:"2027-07-02"}),grant,variant("no",{region:"EU"}),variant("old",{deadline:"2026-09-01"})],demo,Date.parse(at));
- assert.deepEqual(matches.map(m=>m.id),["us-12","later"]);
+ assert.deepEqual(matches.map(m=>m.id),["us-12","later","no"]);
+ assert.match(matches[2].regionNote??"",/EU call/);
  assert.ok(matches[0].score>matches[1].score);
  assert.equal(rank([grant],{...demo,needs:["VC"]},Date.parse(at)).length,0);
  const draft=template(demo,matches[0]);
@@ -62,7 +63,8 @@ test("topical listings outrank broad programs and urgent high-value unrelated gr
  const aws={...grant,id:"aws",title:"AWS Activate",kind:"Growth" as const,source:"Accelerator directory",programId:"aws",region:"Global" as const,deadline:null};
  const matches=rank([quantum,clinical,aws,relevant],demo,Date.parse(at));
  assert.deepEqual(matches.map(m=>m.id),["manufacturing","aws","qubit","nih"]);
- assert.match(matches[0].reason,/1 profile keyword matched/);
+ assert.match(matches[0].reason,/Matched: manufacturers/);
+ assert.ok(matches[0].score<61);
  assert.match(matches[1].reason,/General startup program/);
  assert.match(matches[2].reason,/No topical match/);
  assert.ok(matches[0].score>matches[1].score && matches[1].score>=40 && matches[2].score<25);
