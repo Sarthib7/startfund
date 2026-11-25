@@ -6,7 +6,7 @@ export const regions = {US:"United States", DE:"Germany", UK:"United Kingdom", E
 export const profileSchema = z.object({
   name: z.string().trim().min(1).max(80),
   description: z.string().trim().min(1).max(400),
-  stage: z.enum(["Idea", "Pre-seed", "Seed", "Growth"]),
+  stage: z.enum(["Idea", "Pre-seed", "Seed", "Growth", "Not sure"]),
   region: z.enum(regionsKeys()),
   sector: z.string().trim().min(1).max(80),
   needs: z.array(z.enum(kinds)).min(1).max(kinds.length),
@@ -131,7 +131,7 @@ export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[
       const topicScore = Math.min(4,keywords(matchedTerms.join(" ")).size);
       const broadProgram = o.kind!=="Grant" && (o.generic ?? (o.source === "Accelerator directory" && Boolean(o.programId)));
       const early = p.stage === "Idea" || p.stage === "Pre-seed";
-      const stageFit = early ? /pre-seed|early.stage|phase i\b|accelerat/.test(text) : /scale|growth|phase ii\b/.test(text);
+      const stageFit = p.stage!=="Not sure" && (early ? /pre-seed|early.stage|phase i\b|accelerat/.test(text) : /scale|growth|phase ii\b/.test(text));
       const domainMismatch = o.kind === "Grant" && biomedicalGrant.test(o.title) && !biomedical.test(profileText);
       const fit = domainMismatch ? 4 : broadProgram ? 40 : topicScore===1 ? 43 : topicScore>1 ? 53 + topicScore*6 : 8;
       const days = o.deadline ? Math.max(0,(Date.parse(o.deadline)-Date.parse(day))/86400000) : Infinity;
@@ -157,7 +157,7 @@ export function template(p: Profile, m: Match) {
   const terms=m.matchedTerms?.length ? `The listing’s focus on ${m.matchedTerms.join(", ")} stood out to us. ` : "";
   const details=[m.deadline ? `listed deadline: ${m.deadline}`:null,amount ? `listed award: ${amount}`:null].filter(Boolean).join("; ");
   return { why: m.reason, subject: `${p.name} — ${m.title}`,
-    body: `Hello${federal?" Program Officer":""},\n\nI’m reaching out from ${p.name}, a ${p.stage.toLowerCase()} startup working on ${p.sector}. ${p.description}\n\nI came across “${m.title}”${details ? ` (${details})` : ""}. ${terms}${purpose}${m.applicationGuide ? `\n\nApplication checklist: ${m.applicationGuide}` : ""}\n\nThank you,\nThe ${p.name} team`, mode: "Template" };
+    body: `Hello${federal?" Program Officer":""},\n\nI’m reaching out from ${p.name}, a ${p.stage==="Not sure"?"":p.stage.toLowerCase()+" "}startup working on ${p.sector}. ${p.description}\n\nI came across “${m.title}”${details ? ` (${details})` : ""}. ${terms}${purpose}${m.applicationGuide ? `\n\nApplication checklist: ${m.applicationGuide}` : ""}\n\nThank you,\nThe ${p.name} team`, mode: "Template" };
 }
 
 export function shortlist(matches: Match[], limit = 14): Match[] {
