@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
+import { BrandMark } from "./brand-mark";
 import { kinds, listingStatus, opportunityLocation, regions, selectProfileRegion, type Profile, type Radar, type Match, type Opportunity } from "../lib/domain";
 import { digestHtml } from "../lib/digest";
 import { ShareControls } from "./share-controls";
@@ -122,9 +123,9 @@ export default function Dashboard({initialProfile,initialRadar,initialSample,ini
  const resultCount=shownBundle?.length??shown.length;
  function choose(m:Match){lastListing.current=m;setDraft(null);setCopy("");setDraftError("");setSelected(m);}
  return <div className="shell">
-  <header><Link href="/" className="brand"><span aria-hidden>◎</span> Startfund</Link><span className="topline">FUNDING RADAR</span><Link className="secondary nav-link" href="/catalog">Funding catalog ↗</Link><button className="secondary" onClick={()=>setDigest(!digest)} aria-expanded={digest}>{digest?"Close digest":"Weekly digest ↗"}</button></header>
+  <header><Link href="/" className="brand"><BrandMark/> Startfund</Link><span className="topline">FUNDING RADAR</span><Link className="secondary nav-link" href="/catalog">Funding catalog ↗</Link><button className="secondary" onClick={()=>setDigest(!digest)} aria-expanded={digest}>{digest?"Close digest":"Weekly digest ↗"}</button></header>
   <main>
-   <div className="hero"><p className="eyebrow"><span className="live"/> STARTUP INTELLIGENCE</p><h1>Your funding radar<span>.</span></h1><p>Find grants, tenders, investors, and free tools for your startup.</p><div className="hero-plan"><span>Free: {plans.Free.scan} scans and {plans.Free.draft} drafts per day</span><Link className="secondary nav-link pricing-link" href="/pricing">Compare Free and Pro ↗</Link></div></div>
+   <div className="hero"><p className="eyebrow"><span className="live"/> STARTUP INTELLIGENCE</p><h1>Funding that fits<span>.</span></h1><p>Find grants, tenders, investors, and free tools for your startup.</p><div className="hero-plan"><span>Free: {plans.Free.scan} scans and {plans.Free.draft} drafts per day</span><Link className="secondary nav-link pricing-link" href="/pricing">Compare Free and Pro ↗</Link></div></div>
    <section className="panel intake" aria-label="Funding assistant">
     <form onSubmit={ask}><label htmlFor="company">Company website or name</label><div className="ask"><input id="company" ref={companyRef} required maxLength={240} value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="e.g. yourcompany.com"/><button className="primary" disabled={looking}>{looking?"Working…":"Continue →"}</button></div><p className="meta">Review your company profile, then run a scan to build a scored funding report.</p></form>
     {turns.length>0&&<div className="turns" aria-live="polite">{turns.map((turn,i)=><p key={i}><strong>{turn.question}</strong><br/>{turn.answer}</p>)}</div>}

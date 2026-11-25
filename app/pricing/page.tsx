@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BrandMark } from "../brand-mark";
 import {billingConfig} from "../../lib/billing-state";
 import {plans,proPrice} from "../../lib/plans";
 import {BillingControls} from "./billing-controls";
@@ -8,7 +9,7 @@ export const dynamic="force-dynamic";
 
 export default function Pricing(){
  return <div className="shell">
-  <header><Link href="/" className="brand"><span aria-hidden>◎</span> Startfund</Link><span className="topline">PRICING</span><Link href="/catalog" className="secondary nav-link pricing-link">Funding catalog ↗</Link></header>
+  <header><Link href="/" className="brand"><BrandMark/> Startfund</Link><span className="topline">PRICING</span><Link href="/catalog" className="secondary nav-link pricing-link">Funding catalog ↗</Link></header>
   <main>
    <div className="hero"><p className="eyebrow"><span className="live"/> STARTUP INTELLIGENCE</p><h1>Startfund plans<span>.</span></h1><p>Browse the catalog for free. Choose how often you want to scan and draft.</p></div>
    <div className="plan-grid">
