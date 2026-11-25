@@ -3,6 +3,7 @@ import { request } from "node:https";
 import { BlockList, isIP } from "node:net";
 import { kinds, type Profile } from "./domain";
 import { cleanText } from "./sources";
+import { outbound } from "./outbound";
 
 const resolver=new Resolver({timeout:2000,tries:1});
 const denied=new BlockList();
@@ -42,7 +43,7 @@ async function webPage(url:URL,limit:number):Promise<Page> {
     req.end();
   });
 }
-export async function readCompanyPages(start:URL,read=webPage) {
+export async function readCompanyPages(start:URL,read=(url:URL,limit:number)=>outbound(()=>webPage(url,limit))) {
   const policies=new Map<string,string>();
   async function follow(first:URL,limit:number,check?: (url:URL)=>Promise<void>) {
     let url=first;

@@ -179,6 +179,29 @@ export async function radar(p: Profile):Promise<Radar>{
   const warnings=[...new Set([...general,...us,...eu,...facts].flatMap(r=>r.warning?[r.warning]:[]))];
   return {matches:shortlist(rank(all,p)),evidence:relevantEvidence(facts.flatMap(r=>r.items),p).slice(0,8),warnings,scannedAt:new Date().toISOString()};
 }
+const pendingScans=new Map<string,Promise<Radar>>();
+export async function completedRadar(p:Profile,scope:string,load=radar):Promise<Radar>{
+  const key=createHash("sha256").update(JSON.stringify([
+    scope,p.sector,p.description,p.stage,p.region,[...new Set(p.needs)].sort(),p.priorNihAward===true,p.plansClinicalTrial===true,
+  ])).digest("hex");
+  const pending=pendingScans.get(key);
+  if(pending)return pending;
+  const task=(async()=>{
+    const store=await db();
+    const cached=(await store.all("SELECT data FROM completed_scans WHERE key=? AND expires>?",key,Date.now()))[0];
+    if(cached)return JSON.parse(String(cached.data)) as Radar;
+    const result=await load(p);
+    const now=Date.now();
+    await store.batch([
+      {sql:"DELETE FROM completed_scans WHERE expires<=?",args:[now]},
+      {sql:"INSERT INTO completed_scans VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET expires=excluded.expires,data=excluded.data",
+       args:[key,now+(result.warnings.length?30_000:300_000),JSON.stringify(result)]},
+    ]);
+    return result;
+  })();
+  pendingScans.set(key,task);
+  try{return await task;}finally{pendingScans.delete(key);}
+}
 export async function builderBundle(profile?:Profile) {
   const results=await Promise.all([sourceRows("Accelerator directory"),sourceRows("Official program links")]);
   return results.flatMap(r=>r.items).filter(item=>item.kind==="Perks")

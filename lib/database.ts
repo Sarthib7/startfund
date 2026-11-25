@@ -26,6 +26,14 @@ const schema=[
  "CREATE TABLE IF NOT EXISTS fact_runs (source TEXT PRIMARY KEY, scanned TEXT NOT NULL)",
  "CREATE TABLE IF NOT EXISTS topical_cache (key TEXT PRIMARY KEY, expires INTEGER NOT NULL, data TEXT NOT NULL)",
  "CREATE TABLE IF NOT EXISTS digest_subscriptions (profile_id TEXT PRIMARY KEY, email TEXT NOT NULL, confirmation TEXT NOT NULL, expires INTEGER NOT NULL, confirmed INTEGER, unsubscribe TEXT NOT NULL, sent TEXT)",
+ "CREATE TABLE IF NOT EXISTS usage_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+ "CREATE TABLE IF NOT EXISTS usage_events (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, actor TEXT NOT NULL, ip TEXT NOT NULL, action TEXT NOT NULL, endpoint TEXT NOT NULL)",
+ "CREATE INDEX IF NOT EXISTS usage_by_time ON usage_events(at)",
+ "CREATE INDEX IF NOT EXISTS usage_by_actor ON usage_events(actor,action,at)",
+ "CREATE INDEX IF NOT EXISTS usage_by_ip ON usage_events(ip,action,at)",
+ "CREATE TABLE IF NOT EXISTS usage_limit_hits (day INTEGER NOT NULL, endpoint TEXT NOT NULL, hits INTEGER NOT NULL, PRIMARY KEY(day,endpoint))",
+ "CREATE TABLE IF NOT EXISTS completed_scans (key TEXT PRIMARY KEY, expires INTEGER NOT NULL, data TEXT NOT NULL)",
+ "CREATE INDEX IF NOT EXISTS completed_scans_expiry ON completed_scans(expires)",
 ];
 async function open():Promise<Database>{
  const url=process.env.TURSO_DATABASE_URL,authToken=process.env.TURSO_AUTH_TOKEN;
