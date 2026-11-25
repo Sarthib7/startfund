@@ -48,7 +48,7 @@ export type Opportunity = {
   cpvCodes?:string[]; cpvScope?:"procedure-and-lots";
   targetStages?:Exclude<Profile["stage"],"Not sure">[]; focusTopics?:string[];
 };
-export type Match = Opportunity & { score: number; reason: string; regionNote?: string; matchedTerms?:string[] };
+export type Match = Opportunity & { score: number; reason: string; regionNote?: string; matchedTerms?:string[]; localGovernmentGrant?: true };
 export type Radar = { matches: Match[]; warnings: string[]; scannedAt: string; evidence?: Fact[] };
 const minimumRadarScore = 30;
 const nonTopicalWords = new Set([
@@ -168,7 +168,8 @@ function regionalNote(o: Opportunity, locations:ReturnType<typeof profileLocatio
   const local=o.subdivisions?.length ? o.subdivisions.some(code=>locations.subdivisions.includes(code)) :
     o.countries?.length ? o.countries.some(c=>locations.countries.includes(c)) :
     region==="EU" ? locations.eu || (!label && horizonLocation(o,locations.countries)) : locations.countries.includes(region==="UK"?"GB":region);
-  return { local, restricted:region!=="Global" || Boolean(o.countries?.length), note: !local && region !== "Global" ?
+  const nationalOrRegional=Boolean(o.subdivisions?.length || o.countries?.length || (region!=="Global" && region!=="EU"));
+  return { local, nationalOrRegional, restricted:region!=="Global" || Boolean(o.countries?.length), note: !local && region !== "Global" ?
     opportunityLocation(o) ?? (label ? `${region}-only per source; outside your region` : `${region} call; check eligibility for your region`) : undefined };
 }
 export function listingStatus(o:Opportunity,asOf=new Date().toISOString()):ListingStatus {
@@ -186,6 +187,7 @@ export function catalogMatch(query:string,text:string) {
   return catalogWords(query).every(word=>words.has(word));
 }
 
+const governmentGrantSources=new Set(["Grants.gov","Innovate UK","UK Find a Grant","Förderdatenbank","Government program links","Official program links"]);
 export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[] {
   const asOf = new Date(now).toISOString();
   const day = asOf.slice(0,10);
@@ -240,7 +242,9 @@ export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[
       const startupNote=startupBoost?"Small-business funding mechanism":startupFit==="research"?"Research mechanism; lower priority for a pre-seed startup":
         startupFit==="training"?"Training or career-development mechanism":startupFit==="institution"&&!restricted?"Institution-only eligibility":
         startupFit==="ineligible"?"Small businesses are excluded by the listing":"";
+      const localGovernmentGrant=o.kind==="Grant" && region.local && region.nationalOrRegional && governmentGrantSources.has(o.source);
       return {...o, score: Math.max(0,Math.round(Math.min(cap,score))), regionNote:region.note,matchedTerms,
+        ...(localGovernmentGrant?{localGovernmentGrant:true as const}:{}),
         reason: [topic, region.local ? (curated && o.subdivisions?.length ? "Matches your state or region" : "Matches your region") : region.note ?? "Global listing", ...(o.prerequisites??[]), restricted?"Applicant type is restricted; startups may not qualify":"", startupNote, stageFit ? (curated ? "Matches your stage" : "Stage signal") : "", days <= 14 ? "Closing soon" : "", o.signal ? "News signal, not an open application" : "Confirm eligibility at the source"].filter(Boolean).join(" · ")};
     }).sort((a,b) => b.score-a.score || (a.deadline ?? "9999").localeCompare(b.deadline ?? "9999") || a.id.localeCompare(b.id));
 }
@@ -257,7 +261,8 @@ export function template(p: Profile, m: Match) {
 
 export function shortlist(matches: Match[], limit = 14): Match[] {
   matches = matches.filter(m => m.score >= minimumRadarScore);
-  const priority = new Set(kinds.flatMap(kind => matches.filter(m => m.kind === kind).slice(0, 2).map(m => m.id)));
-  const selected = new Set([...new Set([...priority, ...matches.map(m => m.id)])].slice(0, limit));
+  const local = matches.filter(m=>m.localGovernmentGrant).slice(0,2);
+  const byKind = kinds.flatMap(kind => matches.filter(m => m.kind === kind).slice(0, 2));
+  const selected = new Set([...new Set([...local,...byKind,...matches].map(m=>m.id))].slice(0, limit));
   return matches.filter(m => selected.has(m.id));
 }

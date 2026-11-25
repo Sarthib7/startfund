@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { demo, listingStatus, opportunityLocation, profileSchema, rank } from "../lib/domain";
+import { demo, listingStatus, opportunityLocation, profileSchema, rank, shortlist, type Opportunity } from "../lib/domain";
 import { parseUkGovernmentGrants, sources } from "../lib/sources";
 import { mergeOpportunities } from "../lib/store";
 
@@ -121,4 +121,22 @@ test("automatic region follows company country without replacing explicit or leg
  assert.equal(profileSchema.parse({...demo,companyCountry:"FR",regionExplicit:true}).region,"US");
  assert.equal(profileSchema.parse({...demo,region:"UK"}).region,"UK");
  assert.equal(profileSchema.parse({...demo,regionExplicit:false,companySubdivision:"IN-KA"}).region,"Other");
+});
+
+test("the shortlist reserves two slots for matched national and regional grants among higher-ranked EU calls",async()=>{
+ const programs=await sources["Government program links"](at);
+ const profile=profileSchema.parse({...demo,companyCountry:"FR",companySubdivision:"FR-IDF",regionExplicit:false,needs:["Grant"],
+  sector:"Climate tech and manufacturing",description:"We build industrial decarbonisation and clean energy software for manufacturing."});
+ const eu:Opportunity={id:"eu",title:"Industrial decarbonisation, manufacturing and clean energy",kind:"Grant",
+  source:"EU Funding & Tenders",region:"EU",deadline:"2026-11-28",status:"Open",amount:1_000_000,currency:"EUR",
+  eligibility:null,url:"https://ec.europa.eu/",fetchedAt:at};
+ const calls=Array.from({length:16},(_,i)=>({...eu,id:"eu-"+i}));
+ const matches=rank([...calls,...programs],profile,Date.parse(at));
+ assert.ok(matches.slice(0,14).every(row=>row.region==="EU"));
+ const selected=shortlist(matches);
+ assert.equal(selected.length,14);
+ assert.equal(selected.filter(row=>row.region==="EU").length,12);
+ assert.deepEqual(selected.filter(row=>row.localGovernmentGrant).map(row=>row.id).sort(),["fr-2030","fr-innovup"]);
+ assert.deepEqual(shortlist(matches.filter(row=>row.id!=="fr-innovup" && row.id!=="fr-french-tech"))
+  .filter(row=>row.localGovernmentGrant).map(row=>row.id),["fr-2030"]);
 });
