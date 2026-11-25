@@ -1,4 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
+import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { sources, type Source } from "./sources";
@@ -9,8 +10,9 @@ import { reader, type Snapshot } from "./transport";
 let database: DatabaseSync | undefined;
 function db() {
   if (!database) {
-    const path = resolve(/*turbopackIgnore: true*/ process.env.RADAR_DB_PATH || ".radar/startfund.sqlite");
-    mkdirSync(dirname(path),{recursive:true});
+    const configured=process.env.RADAR_DB_PATH;
+    const path = configured===":memory:" ? configured : resolve(/*turbopackIgnore: true*/ configured || ".radar/startfund.sqlite");
+    if (path!==":memory:") mkdirSync(dirname(path),{recursive:true});
     database = new DatabaseSync(path);
     database.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=4000; CREATE TABLE IF NOT EXISTS sources (name TEXT PRIMARY KEY, scanned TEXT NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS profiles (id TEXT PRIMARY KEY, data TEXT NOT NULL, digest TEXT, sent TEXT, updated TEXT NOT NULL);");
     database.exec(`
@@ -22,6 +24,8 @@ function db() {
       CREATE TABLE IF NOT EXISTS evidence (id TEXT PRIMARY KEY, source TEXT NOT NULL, entity_id TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS signals (id TEXT PRIMARY KEY, source TEXT NOT NULL, observed TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS fact_runs (source TEXT PRIMARY KEY, scanned TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS digest_subscriptions (profile_id TEXT PRIMARY KEY, email TEXT NOT NULL,
+        confirmation TEXT NOT NULL, expires INTEGER NOT NULL, confirmed INTEGER, unsubscribe TEXT NOT NULL, sent TEXT);
     `);
   }
   return database;
@@ -130,13 +134,37 @@ export function saved(id:string){
 export function save(id:string,p:Profile,digest:Radar){
   db().prepare("INSERT INTO profiles (id,data,digest,updated) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,digest=excluded.digest,updated=excluded.updated").run(id,JSON.stringify(p),JSON.stringify(digest),new Date().toISOString());
 }
+const tokenHash=(token:string)=>createHash("sha256").update(token).digest("hex");
+export function digestSubscription(id:string) {
+  const row=db().prepare("SELECT confirmed,expires FROM digest_subscriptions WHERE profile_id=?").get(id);
+  return row?.confirmed ? "subscribed" : row && Number(row.expires)>Date.now() ? "pending" : "off";
+}
+export function requestSubscription(id:string,email:string,token:string,unsubscribe:string) {
+  return db().prepare(`INSERT INTO digest_subscriptions (profile_id,email,confirmation,expires,unsubscribe)
+    VALUES (?,?,?,?,?) ON CONFLICT(profile_id) DO UPDATE SET email=excluded.email,confirmation=excluded.confirmation,
+    expires=excluded.expires,unsubscribe=excluded.unsubscribe,confirmed=NULL,sent=NULL
+    WHERE digest_subscriptions.confirmed IS NULL AND digest_subscriptions.expires <= ?`)
+    .run(id,email,tokenHash(token),Date.now()+86400000,unsubscribe,Date.now()).changes>0;
+}
+export function confirmSubscription(token:string) {
+  return db().prepare("UPDATE digest_subscriptions SET confirmed=? WHERE confirmation=? AND expires>? AND confirmed IS NULL")
+    .run(Date.now(),tokenHash(token),Date.now()).changes>0;
+}
+export function removeSubscription(id:string) {
+  db().prepare("DELETE FROM digest_subscriptions WHERE profile_id=?").run(id);
+}
+export function unsubscribeDigest(token:string) {
+  return db().prepare("DELETE FROM digest_subscriptions WHERE unsubscribe=?").run(token).changes>0;
+}
 export function subscriptions(){
-  return db().prepare("SELECT id,data,sent FROM profiles WHERE updated>?").all(new Date(Date.now()-90*86400000).toISOString())
-    .map(row=>({id:String(row.id),profile:JSON.parse(String(row.data)) as Profile,sent:row.sent ? String(row.sent) : null}));
+  return db().prepare(`SELECT p.id,p.data,s.sent,s.email,s.unsubscribe FROM profiles p JOIN digest_subscriptions s
+    ON p.id=s.profile_id WHERE s.confirmed IS NOT NULL`).all()
+    .map(row=>({id:String(row.id),profile:JSON.parse(String(row.data)) as Profile,sent:row.sent ? String(row.sent) : null,
+      email:String(row.email),unsubscribe:String(row.unsubscribe)}));
 }
 export function updateDigest(id:string,digest:Radar){
   db().prepare("UPDATE profiles SET digest=? WHERE id=?").run(JSON.stringify(digest),id);
 }
 export function markSent(id:string,week:string){
-  db().prepare("UPDATE profiles SET sent=? WHERE id=?").run(week,id);
+  db().prepare("UPDATE digest_subscriptions SET sent=? WHERE profile_id=?").run(week,id);
 }

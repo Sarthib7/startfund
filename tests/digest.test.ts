@@ -1,0 +1,30 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { demo } from "../lib/domain";
+import { confirmSubscription, digestSubscription, requestSubscription, save, unsubscribeDigest } from "../lib/store";
+import { weekly } from "../lib/weekly";
+
+test("saving an allowlisted email and requesting confirmation do not enable weekly delivery",async t=>{
+ process.env.RADAR_DB_PATH=":memory:";
+ process.env.RESEND_API_KEY="fake-test-key";
+ process.env.RADAR_EMAIL_FROM="radar@example.com";
+ process.env.RADAR_ALLOWED_RECIPIENT="founder@example.com";
+ process.env.RADAR_PUBLIC_ORIGIN="https://example.com";
+ const fetchMock=t.mock.method(globalThis,"fetch",()=>{throw new Error("Unexpected delivery or source traffic");});
+ const id="scan",email="founder@example.com",confirm="a".repeat(64),unsubscribe="b".repeat(64);
+ save(id,{...demo,email},{matches:[],warnings:[],scannedAt:"2026-11-25T12:00:00Z"});
+ assert.equal(digestSubscription(id),"off");
+ await weekly();
+ assert.equal(fetchMock.mock.callCount(),0);
+ assert.equal(requestSubscription(id,email,confirm,unsubscribe),true);
+ assert.equal(digestSubscription(id),"pending");
+ await weekly();
+ assert.equal(fetchMock.mock.callCount(),0);
+ assert.equal(confirmSubscription("c".repeat(64)),false);
+ assert.equal(confirmSubscription(confirm),true);
+ assert.equal(confirmSubscription(confirm),false);
+ assert.equal(digestSubscription(id),"subscribed");
+ assert.equal(unsubscribeDigest(unsubscribe),true);
+ await weekly();
+ assert.equal(fetchMock.mock.callCount(),0);
+});
