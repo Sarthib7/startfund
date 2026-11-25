@@ -135,6 +135,15 @@ export function profileLocations(p:Profile) {
   const countries=[...new Set([...(base?[base]:[]),...(p.developerCountries??[]),...subdivisions.map(code=>code.slice(0,2))])];
   return {countries,subdivisions,eu:(!p.companyCountry && !p.companySubdivision && p.region==="EU") || countries.some(c=>Object.hasOwn(euCountryCodes,c))};
 }
+const horizonAssociated=new Set(["AL","AM","BA","CH","EG","FO","GB","GE","IL","IS","MD","ME","MK","NO","RS","TN","TR","UA","XK"]);
+const horizonPillarTwoAssociated=new Set(["CA","JP","KR","NZ"]);
+function horizonLocation(o:Opportunity,countries:string[]) {
+  if(o.source!=="EU Funding & Tenders" || o.programme!=="Horizon Europe") return false;
+  const cluster=/\bHORIZON-CL[1-6]-/.test(o.id);
+  const equityOnly=/\b(?:equity|investment)[ -]only\b/i.test(o.title);
+  return countries.some(code=>horizonAssociated.has(code) && !(code==="GB" && equityOnly) ||
+    cluster && horizonPillarTwoAssociated.has(code));
+}
 function regionalNote(o: Opportunity, locations:ReturnType<typeof profileLocations>) {
   const text = o.eligibility ?? "";
   const restriction = text.match(/\b(UK|United Kingdom|EU|European Union|US|U\.S\.|United States)[- ](?:based[- ]only|only)\b|\bonly\s+(UK|United Kingdom|EU|European Union|US|U\.S\.|United States)\b/i);
@@ -142,7 +151,7 @@ function regionalNote(o: Opportunity, locations:ReturnType<typeof profileLocatio
   const region = label ? /^(?:uk|united kingdom)$/i.test(label) ? "UK" : /^(?:eu|european union)$/i.test(label) ? "EU" : "US" : o.region;
   const local=o.subdivisions?.length ? o.subdivisions.some(code=>locations.subdivisions.includes(code)) :
     o.countries?.length ? o.countries.some(c=>locations.countries.includes(c)) :
-    region==="EU" ? locations.eu : locations.countries.includes(region==="UK"?"GB":region);
+    region==="EU" ? locations.eu || (!label && horizonLocation(o,locations.countries)) : locations.countries.includes(region==="UK"?"GB":region);
   return { local, restricted:region!=="Global" || Boolean(o.countries?.length), note: !local && region !== "Global" ?
     o.countries?.length ? `Place of performance: ${o.countries.join(", ")}` :
     label ? `${region}-only per source; outside your region` : `${region} call; check eligibility for your region` : undefined };
