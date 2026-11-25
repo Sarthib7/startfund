@@ -53,7 +53,8 @@ test("ranking rewards urgency and local eligibility, flags other regions and fil
 });
 test("digest escapes model-independent listing and profile content",()=>{
  const matches=rank([{...grant,title:"<script>alert(1)</script>"}],demo,Date.parse(at));
- const html=digestHtml({...demo,name:"A&B"},{matches,warnings:[],scannedAt:at});
+ const html=digestHtml({...demo,name:"A&B"},{matches,warnings:["NSF Awards: topical search unavailable"],scannedAt:at});
+ assert.doesNotMatch(html,/topical search unavailable/);
  assert.match(html,/A&amp;B/);assert.doesNotMatch(html,/<script>/);
 });
 test("the shortlist keeps distinct needs visible even when one dominates",()=>{
