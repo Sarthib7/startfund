@@ -2,12 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { demo, profileSchema, rank, type Opportunity } from "../lib/domain";
 import { parseGermanFeed, parseGermanGrant, parseTed, searchTed, sources } from "../lib/sources";
+import { save, saved } from "../lib/store";
 import { reader } from "../lib/transport";
 
 const at="2026-11-25T12:00:00Z";
 const notice={
  "publication-number":"123456-2026",
  "notice-title":{deu:"Energie und Software",eng:"Energy and manufacturing software"},
+ "main-classification-proc":["72200000"],
  "place-of-performance-country-lot":["DEU","DEU","FRA"],
  "place-of-performance-country-proc":["NLD"],
  "publication-date":"2026-11-23+01:00",
@@ -35,10 +37,29 @@ test("TED normalizes currently open procurement, keeping place-of-performance co
   assert.equal(url,"https://api.ted.europa.eu/v3/notices/search");
   const request=JSON.parse(String(init?.body));
   assert.equal(request.scope,"ACTIVE");
+  assert.ok(request.fields.includes("main-classification-proc"));
+  assert.match(request.query,/main-classification-proc IN \(72\*, 48\*, 73\*, 302\*, 793\*, 794\*, 642\*, 713\*\)/);
+  assert.match(request.query,/AND NOT main-classification-proc = 45\*/);
   assert.match(request.query,/place-of-performance-country-lot IN \(DEU\)/);
   return {notices:[notice]};
  },["DE"]);
  assert.deepEqual(rows,[tender]);
+});
+
+test("TED drops construction and unclassified notices even when the API returns them",()=>{
+ const construction={...notice,"publication-number":"123457-2026","main-classification-proc":["45231300"]};
+ const mixed={...notice,"publication-number":"123458-2026","main-classification-proc":["72200000","45310000"]};
+ const unknown={...notice,"publication-number":"123459-2026","main-classification-proc":undefined};
+ assert.deepEqual(parseTed({notices:[construction,mixed,unknown,notice]},at).map(o=>o.id),[tender.id]);
+});
+
+test("saved radar results do not surface tenders from before CPV filtering",t=>{
+ const previous=process.env.RADAR_DB_PATH;
+ process.env.RADAR_DB_PATH=":memory:";
+ t.after(()=>{if(previous===undefined) delete process.env.RADAR_DB_PATH; else process.env.RADAR_DB_PATH=previous;});
+ const match={...tender,score:82,reason:"Matched software"};
+ save("legacy-tenders",demo,{matches:[{...match,id:"legacy",cpvCodes:undefined},match],warnings:[],scannedAt:at});
+ assert.deepEqual(saved("legacy-tenders")?.digest?.matches,[match]);
 });
 
 test("Förderdatenbank verifies subsidy type on federal and Länder details without assuming an application window",async()=>{

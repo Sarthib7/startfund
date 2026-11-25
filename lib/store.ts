@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { enrichUs, searchEu, searchTed, searchUs, sources, type Source } from "./sources";
+import { enrichUs, hasStartupTenderCpv, searchEu, searchTed, searchUs, sources, type Source } from "./sources";
 import { byListingStatus, catalogMatch, euCountryCodes, listingStatus, profileLocations, profileQueries, relevantEvidence, rank, shortlist, type Opportunity, type Profile, type Radar } from "./domain";
 import { factSources, rights, searchCordis, searchNsf, searchUkri, type Fact, type FactSource } from "./facts";
 import { reader, type Snapshot } from "./transport";
@@ -53,7 +53,8 @@ export async function sourceRows(name: Source) {
     const stored: Opportunity[] = previous ? JSON.parse(previous.data) : [];
     const current = name==="Hacker News" ? stored.every(o=>o.kind==="Market signal") :
       name==="EU Funding & Tenders" || name==="Grants.gov" ? stored.every(o=>o.status) :
-      name==="Accelerator directory" ? stored.every(o=>o.kind!=="Growth") : true;
+      name==="Accelerator directory" ? stored.every(o=>o.kind!=="Growth") :
+      name==="TED" ? stored.every(o=>hasStartupTenderCpv(o.cpvCodes)) : true;
     if (previous && current && Date.now()-Date.parse(previous.scanned) < ttl) return {items: stored};
     const at = new Date().toISOString();
     try {
@@ -77,7 +78,8 @@ export async function sourceRows(name: Source) {
       }catch(e){store.exec("ROLLBACK");throw e;}
       return {items};
     } catch {
-      return {items:stored, warning: `${name}: ${previous ? "showing cached listings" : "temporarily unavailable"}`};
+      const items=name==="TED" ? stored.filter(o=>hasStartupTenderCpv(o.cpvCodes)) : stored;
+      return {items, warning: `${name}: ${previous && (name!=="TED" || items.length) ? "showing cached listings" : "temporarily unavailable"}`};
     }
   })();
   inFlight.set(name,task);
@@ -195,7 +197,10 @@ export async function builderBundle(profile?:Profile) {
 }
 export function saved(id:string){
   const row=db().prepare("SELECT data,digest FROM profiles WHERE id=?").get(id) as {data:string;digest:string|null}|undefined;
-  return row ? {profile:JSON.parse(row.data) as Profile,digest:row.digest ? JSON.parse(row.digest) as Radar : null} : null;
+  if(!row) return null;
+  const digest=row.digest ? JSON.parse(row.digest) as Radar : null;
+  if(digest) digest.matches=digest.matches.filter(o=>o.source!=="TED" || hasStartupTenderCpv(o.cpvCodes));
+  return {profile:JSON.parse(row.data) as Profile,digest};
 }
 export function save(id:string,p:Profile,digest:Radar){
   db().prepare("INSERT INTO profiles (id,data,digest,updated) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,digest=excluded.digest,updated=excluded.updated").run(id,JSON.stringify(p),JSON.stringify(digest),new Date(Date.now()).toISOString());

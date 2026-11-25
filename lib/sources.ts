@@ -137,9 +137,16 @@ export function parseInnovateUk(html:string,fetchedAt:string):Opportunity[] {
       url:ifs+link[1],currency:"GBP",amount:null,eligibility:"UK competition; check registration, lead applicant and consortium requirements in the source.",fetchedAt}];
   });
 }
+const startupCpvPrefixes=["72","48","73","302","793","794","642","713"];
+const constructionCpvPrefix="45";
+export function hasStartupTenderCpv(codes:string[]|undefined) {
+  return Boolean(codes?.some(code=>/^\d{8}$/.test(code) && startupCpvPrefixes.some(prefix=>code.startsWith(prefix))) &&
+    !codes.some(code=>code.startsWith(constructionCpvPrefix)));
+}
 const tedRow=z.object({
   "publication-number":z.string().regex(/^\d+-\d{4}$/),
   "notice-title":z.record(z.string(),str),
+  "main-classification-proc":z.array(z.string()),
   "deadline-receipt-tender-date-lot":z.array(z.string()),
   "place-of-performance-country-lot":z.array(z.string()).optional(),
   "place-of-performance-country-proc":z.array(z.string()).optional(),
@@ -151,14 +158,14 @@ export function parseTed(raw:unknown,fetchedAt:string):Opportunity[] {
   if(timedOut) throw new Error("TED search timed out");
   return notices.flatMap(row=>{
     const {data:r}=tedRow.safeParse(row);
-    if(!r) return [];
+    if(!r || !hasStartupTenderCpv(r["main-classification-proc"])) return [];
     const deadline=r["deadline-receipt-tender-date-lot"].map(date).filter(d=>d && d>=fetchedAt.slice(0,10)).sort()[0];
     const countries=[...new Set([...(r["place-of-performance-country-lot"]??[]),...(r["place-of-performance-country-proc"]??[])]
       .map(tedCountry).filter(c=>c!==undefined))];
     const title=cleanText(r["notice-title"].eng??Object.values(r["notice-title"])[0],600);
     if(!deadline || !countries.length || !title) return [];
     const id=r["publication-number"];
-    return [{id:`ted-${id}`,title,kind:"Tender",region:"EU",countries,source:"TED",url:`https://ted.europa.eu/en/notice/-/detail/${id}`,
+    return [{id:`ted-${id}`,title,kind:"Tender",region:"EU",countries,cpvCodes:r["main-classification-proc"],source:"TED",url:`https://ted.europa.eu/en/notice/-/detail/${id}`,
       deadline,status:"Open",amount:null,currency:"EUR",eligibility:"Place of performance is not bidder eligibility; check the original notice.",
       postedAt:date(r["publication-date"])??undefined,fetchedAt}];
   });
@@ -166,7 +173,8 @@ export function parseTed(raw:unknown,fetchedAt:string):Opportunity[] {
 export async function searchTed(at:string,read:Reader,countries:string[]=Object.keys(euCountryCodes)) {
   const codes=Object.entries(euCountryCodes).filter(([country])=>countries.includes(country)).map(([,code])=>code).join(", ");
   if(!codes) return [];
-  const query=`notice-type IN (cn-standard, cn-social, cn-desg) AND deadline-receipt-tender-date-lot >= today() AND publication-date >= today(-60) AND (place-of-performance-country-lot IN (${codes}) OR place-of-performance-country-proc IN (${codes}))`;
+  const cpv=startupCpvPrefixes.map(prefix=>prefix+"*").join(", ");
+  const query=`notice-type IN (cn-standard, cn-social, cn-desg) AND deadline-receipt-tender-date-lot >= today() AND publication-date >= today(-60) AND main-classification-proc IN (${cpv}) AND NOT main-classification-proc = ${constructionCpvPrefix}* AND (place-of-performance-country-lot IN (${codes}) OR place-of-performance-country-proc IN (${codes}))`;
   return parseTed(await post(read,"https://api.ted.europa.eu/v3/notices/search",{
     query,fields:Object.keys(tedRow.shape),scope:"ACTIVE",limit:60,page:1,
   }),at);

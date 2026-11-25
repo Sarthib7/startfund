@@ -31,7 +31,7 @@ export type Opportunity = {
   eligibility: string | null; fetchedAt: string; signal?: boolean; programId?: string; description?: string;
   status?: ListingStatus; opensAt?: string|null; programme?: string; postedAt?:string; generic?:boolean; contact?:string;
   verifiedAt?:string; noticeExpires?:string; deadlineNote?:string; applicationGuide?:string;
-  awardFloor?:number|null; programFunding?:number|null; prerequisites?:string[]; countries?:string[];
+  awardFloor?:number|null; programFunding?:number|null; prerequisites?:string[]; countries?:string[]; cpvCodes?:string[];
 };
 export type Match = Opportunity & { score: number; reason: string; regionNote?: string; matchedTerms?:string[] };
 export type Radar = { matches: Match[]; warnings: string[]; scannedAt: string; evidence?: Fact[] };
