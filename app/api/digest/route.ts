@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { confirmSubscription, digestSubscription, removeSubscription, requestSubscription, saved, unsubscribeDigest } from "../../../lib/store";
-import { digestDelivery, digestLink, sendDigestEmail } from "../../../lib/digest-delivery";
+import { digestDelivery, digestEmailAvailable, digestLink, sendDigestEmail } from "../../../lib/digest-delivery";
 
 async function profileId(){ return (await cookies()).get("startfund-profile")?.value; }
 const tokenPattern=/^[a-f0-9]{64}$/;
@@ -21,7 +21,7 @@ export async function GET(request:Request) {
   if (action) return action.mode==="confirm" ? page("Confirm your weekly digest subscription","Confirm subscription") :
     page("Unsubscribe from the weekly digest","Unsubscribe");
   const id=await profileId();
-  return Response.json({state:id ? await digestSubscription(id) : "off"},{headers:{"cache-control":"no-store"}});
+  return Response.json({state:id ? await digestSubscription(id) : "off",available:digestEmailAvailable()},{headers:{"cache-control":"no-store"}});
 }
 export async function POST(request:Request) {
   if (request.headers.get("sec-fetch-site")==="cross-site") return new Response(null,{status:403});
@@ -41,6 +41,7 @@ export async function POST(request:Request) {
     return Response.json({state:"off"});
   }
   const {email}=value.data, delivery=digestDelivery(email);
+  if (!digestEmailAvailable()) return Response.json({error:"Email delivery isn’t set up yet — preview below."},{status:503});
   if (!delivery) return Response.json({error:"Email subscription is unavailable for this address. You can still preview the digest."},{status:503});
   const token=createToken();
   if (!(await requestSubscription(id,email,token,createToken()))) return Response.json({state:await digestSubscription(id)});

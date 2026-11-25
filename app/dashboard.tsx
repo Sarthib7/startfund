@@ -19,14 +19,20 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
  const [prompt,setPrompt]=useState(""),[looking,setLooking]=useState(false),[turns,setTurns]=useState<{question:string;answer:string}[]>([]);
  const [selected,setSelected]=useState<Match|null>(null),[draft,setDraft]=useState<Draft|null>(null),[draftError,setDraftError]=useState(""),[copy,setCopy]=useState("");
  const [digest,setDigest]=useState(false),[digestState,setDigestState]=useState("off"),[digestEmail,setDigestEmail]=useState(""),
- [digestError,setDigestError]=useState(""),[digestBusy,setDigestBusy]=useState(false);
+ [digestError,setDigestError]=useState(""),[digestBusy,setDigestBusy]=useState(false),[emailAvailable,setEmailAvailable]=useState<boolean|null>(null);
  const resultsRef=useRef<HTMLElement>(null),digestRef=useRef<HTMLElement>(null),companyRef=useRef<HTMLInputElement>(null);
  const lastListing=useRef<Match|null>(null);
+ const setupRef=useRef<HTMLElement>(null);
+ const missingFields=[...(!profile.description.trim()?["description"]:[]),...(!profile.sector.trim()?["sector"]:[])];
  const scrollTo=(element:HTMLElement|null)=>{element?.scrollIntoView({block:"start",behavior:"smooth"});element?.focus({preventScroll:true});};
+ function editField(name:string){
+  setEdit(true);
+  requestAnimationFrame(()=>scrollTo(setupRef.current?.querySelector<HTMLElement>(`[name="${name}"]`)??null));
+ }
  useEffect(()=>{
   if(!digest)return;
   scrollTo(digestRef.current);
-  const refresh=()=>fetch("/api/digest").then(r=>r.json()).then(data=>setDigestState(data.state)).catch(()=>{});
+  const refresh=()=>fetch("/api/digest").then(r=>r.json()).then(data=>{setDigestState(data.state);setEmailAvailable(data.available);}).catch(()=>{});
   void refresh();
   window.addEventListener("focus",refresh);
   return ()=>window.removeEventListener("focus",refresh);
@@ -105,20 +111,20 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
     <form onSubmit={ask}><label htmlFor="company">What’s your company? <span className="muted">(name or website)</span></label><div className="ask"><input id="company" ref={companyRef} required maxLength={240} value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="Company website or a follow-up question"/><button className="primary" disabled={looking}>{looking?"Working…":"Ask →"}</button></div></form>
     {turns.length>0&&<div className="turns" aria-live="polite">{turns.map((turn,i)=><p key={i}><strong>{turn.question}</strong><br/>{turn.answer}</p>)}</div>}
     <div className="intake-actions">{sample&&<span className="badge">Sample: {initialProfile.name}</span>}<button className="secondary" onClick={()=>setEdit(!edit)}>{edit?"Hide details":"Edit details"}</button><button className="secondary" onClick={()=>{setProfile(initialClean(initialProfile));setConfirmation(false);setEdit(true);}}>Clear</button></div>
-    {confirmation&&<div className="profile-confirm"><div className="intake-actions">{[profile.name,profile.sector,regions[profile.region],profile.stage].filter(Boolean).map((value,i)=><button key={i} className="secondary" onClick={()=>setEdit(true)}>{value}</button>)}</div><p>{profile.description}</p><button className="primary" disabled={pending||!profile.description||!profile.sector} onClick={()=>scan()}>{pending?"Scanning…":"Confirm and scan →"}</button></div>}
+    {confirmation&&<div className="profile-confirm"><div className="intake-actions">{[profile.name,profile.sector,regions[profile.region],profile.stage].filter(Boolean).map((value,i)=><button key={i} className="secondary" onClick={()=>setEdit(true)}>{value}</button>)}</div><p>{profile.description}</p>{missingFields.length?<button className="secondary" onClick={()=>editField(missingFields[0])}>Add {missingFields.map(field=>"a "+field).join(" and ")} to scan</button>:<button className="primary" disabled={pending} onClick={()=>scan()}>{pending?"Scanning…":"Confirm and scan →"}</button>}</div>}
     {error&&!edit&&<p className="error" role="alert">{error}</p>}
    </section>
    <div className={edit?"workspace":"workspace single"}>
-    {edit&&<section className="panel setup"><div className="section-kicker">01 / SETUP</div><h2>Startup profile</h2>
+    {edit&&<section className="panel setup" ref={setupRef}><div className="section-kicker">01 / SETUP</div><h2>Startup profile</h2>
      <form onSubmit={scan}>
      <label>Startup<input required maxLength={80} value={profile.name} onChange={e=>setProfile({...profile,name:e.target.value})}/></label>
-     <label>What you do<textarea required rows={3} maxLength={400} value={profile.description} onChange={e=>setProfile({...profile,description:e.target.value})}/></label>
+     <label>What you do<textarea name="description" required rows={3} maxLength={400} value={profile.description} onChange={e=>setProfile({...profile,description:e.target.value})}/></label>
      <div className="cols"><label>Stage<select value={profile.stage} onChange={e=>setProfile({...profile,stage:e.target.value as Profile["stage"]})}>{["Idea","Pre-seed","Seed","Growth"].map(x=><option key={x}>{x}</option>)}</select></label>
      <label>Region<select value={profile.region} onChange={e=>setProfile({...profile,region:e.target.value as Profile["region"]})}>{Object.entries(regions).map(([code,label])=><option value={code} key={code}>{label}</option>)}</select></label></div>
-     <label>Sector<input required maxLength={80} value={profile.sector} onChange={e=>setProfile({...profile,sector:e.target.value})}/></label>
+     <label>Sector<input name="sector" required maxLength={80} value={profile.sector} onChange={e=>setProfile({...profile,sector:e.target.value})}/></label>
      <fieldset><legend>Looking for</legend><div className="choices">{kinds.map(x=><label className="chip" key={x}><input type="checkbox" checked={profile.needs.includes(x)} onChange={e=>setProfile({...profile,needs:e.target.checked?[...profile.needs,x]:profile.needs.filter(n=>n!==x)})}/>{names[x]}</label>)}</div></fieldset>
      {/biotech|medical|health/i.test(profile.sector)&&<fieldset><legend>NIH prerequisites</legend><label className="chip"><input type="checkbox" checked={profile.priorNihAward===true} onChange={e=>setProfile({...profile,priorNihAward:e.target.checked})}/>Prior NIH SBIR/STTR award</label><label className="chip"><input type="checkbox" checked={profile.plansClinicalTrial===true} onChange={e=>setProfile({...profile,plansClinicalTrial:e.target.checked})}/>Planning a clinical trial</label></fieldset>}
-     <button className="primary" disabled={pending} type="submit">{pending?"Scanning…":"Scan opportunities →"}</button>
+     <button name="scan" className="primary" disabled={pending} type="submit">{pending?"Scanning…":"Scan opportunities →"}</button>
      {error&&<p className="error" role="alert">{error}</p>}
      </form>
     </section>}
@@ -145,7 +151,7 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
    </div>
    {digest&&<section className="panel detail" ref={digestRef} tabIndex={-1} aria-label="Digest preview"><h2>Weekly digest preview</h2><p className="muted">Top five matches · Mondays at 13:00 UTC</p>
     <p aria-live="polite">{digestState==="subscribed"?"Subscribed":digestState==="pending"?"Check your inbox to confirm":"Not subscribed"}</p>
-    {digestState==="off"?<form className="ask" onSubmit={e=>{e.preventDefault();void digestAction("subscribe");}}><input aria-label="Email for weekly digest" type="email" required value={digestEmail} onChange={e=>setDigestEmail(e.target.value)} placeholder="you@company.com"/><button className="secondary" disabled={digestBusy}>Subscribe</button></form>:<button className="secondary" disabled={digestBusy} onClick={()=>digestAction("unsubscribe")}>{digestState==="pending"?"Cancel request":"Unsubscribe"}</button>}
+    {digestState==="off"?<>{sample&&<button className="secondary" onClick={()=>editField("scan")}>Scan first</button>}{emailAvailable===false?<p className="muted">Email delivery isn’t set up yet — preview below.</p>:!sample&&emailAvailable&&<form className="ask" onSubmit={e=>{e.preventDefault();void digestAction("subscribe");}}><input aria-label="Email for weekly digest" type="email" required value={digestEmail} onChange={e=>setDigestEmail(e.target.value)} placeholder="you@company.com"/><button className="secondary" disabled={digestBusy}>Subscribe</button></form>}</>:<button className="secondary" disabled={digestBusy} onClick={()=>digestAction("unsubscribe")}>{digestState==="pending"?"Cancel request":"Unsubscribe"}</button>}
     {digestError&&<p className="error" role="alert">{digestError}</p>}
     <iframe title="Weekly radar email" sandbox="allow-popups allow-popups-to-escape-sandbox" srcDoc={digestHtml(saved,radar)}/>
    </section>}
