@@ -20,6 +20,16 @@ export function BillingControls({success=false}:{success?:boolean}){
   let checks=0;
   async function load(){
    try{
+    const url=new URL(window.location.href);
+    const sessionId=success?url.searchParams.get("session_id"):null;
+    if(sessionId){
+     const confirmation=await fetch("/api/billing/confirm",{
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId}),signal:controller.signal,
+     });
+     if(!confirmation.ok)throw new Error();
+     url.searchParams.delete("session_id");
+     window.history.replaceState(null,"",url);
+    }
     const response=await fetch("/api/billing/status",{cache:"no-store",signal:controller.signal});
     if(!response.ok)throw new Error();
     const current:BillingStatus=await response.json();

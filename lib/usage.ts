@@ -26,27 +26,36 @@ function usageSecret(){
  })().catch(e=>{signingKey=undefined;throw e;});
 }
 const bearer=(request:Request)=>request.headers.get("authorization")?.match(/^Bearer ([^\s]+)$/i)?.[1];
-const visitorSignature=(secret:string,id:string,keyHash?:string)=>
- mac(secret,keyHash?"restored-visitor:"+id+":"+keyHash:"visitor:"+id);
-function signedVisitorCookie(request:Request,id:string,secret:string,keyHash?:string){
+const visitorMatch=(cookies:string|null)=>cookies?.match(/(?:^|;\s*)startfund-visitor=([a-f0-9-]{36})\.([\w-]{43})(?:\.r\.([a-f0-9-]{36}))?(?:;|$)/);
+const ownerSignature=(secret:string,id:string)=>mac(secret,"visitor:"+id);
+const restoredSignature=(secret:string,id:string,keyHash:string,nonce:string)=>mac(secret,"restored-visitor:"+id+":"+keyHash+":"+nonce);
+function signedVisitorCookie(request:Request,value:string){
  const secure=new URL(request.url).protocol==="https:"?"; Secure":"";
- return `${visitorCookie}=${id}.${visitorSignature(secret,id,keyHash)}${keyHash?".r":""}; Path=/; HttpOnly; SameSite=Lax; Max-Age=7776000${secure}`;
+ return `${visitorCookie}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=7776000${secure}`;
+}
+export async function ownerVisitorCookie(request:Request,id:string){
+ return signedVisitorCookie(request,`${id}.${ownerSignature(await usageSecret(),id)}`);
+}
+export function checkoutBrowserProof(cookies:string|null){
+ const value=visitorMatch(cookies);
+ return value?digest(value[2]).toString("hex"):null;
 }
 export async function restoreVisitorCookie(request:Request,id:string,key:string){
- return signedVisitorCookie(request,id,await usageSecret(),proKeyHash(key));
+ const nonce=randomUUID();
+ return signedVisitorCookie(request,`${id}.${restoredSignature(await usageSecret(),id,proKeyHash(key),nonce)}.r.${nonce}`);
 }
 async function readVisitor(request:Request,secret:string){
- const value=request.headers.get("cookie")?.match(/(?:^|;\s*)startfund-visitor=([a-f0-9-]{36})\.([\w-]{43})(\.r)?(?:;|$)/);
+ const value=visitorMatch(request.headers.get("cookie"));
  if(value){
-  const [,id,signature,restored]=value;
-  if(!restored&&sameSecret(signature,visitorSignature(secret,id)))return {id,restored:false};
-  if(restored){
+  const [,id,signature,nonce]=value;
+  if(!nonce&&sameSecret(signature,ownerSignature(secret,id)))return {id,restored:false};
+  if(nonce){
    const keyHash=await currentProKeyHash(id);
-   if(keyHash&&sameSecret(signature,visitorSignature(secret,id,keyHash)))return {id,restored:true};
+   if(keyHash&&sameSecret(signature,restoredSignature(secret,id,keyHash,nonce)))return {id,restored:true};
   }
  }
  const id=randomUUID();
- return {id,cookie:signedVisitorCookie(request,id,secret),restored:false};
+ return {id,cookie:signedVisitorCookie(request,`${id}.${ownerSignature(secret,id)}`),restored:false};
 }
 export async function browserVisitor(request:Request){
  return readVisitor(request,await usageSecret());

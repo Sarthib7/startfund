@@ -25,7 +25,7 @@ test("Stripe is disabled unless all billing settings are configured",async()=>{
  finally{delete process.env.STRIPE_SECRET_KEY;}
 });
 
-test("signed Stripe events drive shared Pro quotas, one-time recovery, and Portal",async()=>{
+test("signed Stripe events drive shared Pro quotas, one-time recovery, and Portal",async t=>{
  process.env.STRIPE_SECRET_KEY=config.secretKey;
  process.env.STRIPE_WEBHOOK_SECRET=config.webhookSecret;
  process.env.STRIPE_PRICE_ID=config.priceId;
@@ -33,7 +33,8 @@ test("signed Stripe events drive shared Pro quotas, one-time recovery, and Porta
  let checkout:Stripe.Checkout.SessionCreateParams|undefined;
  let customerCreates=0,retrievals=0,subscriptionStatus="trialing";
  let unitAmount=900;
- let latestSession:{id:string;status:string;url:string|null}|undefined;
+ let latestSession:{id:string;status:string;url:string|null;metadata?:Stripe.MetadataParam|null}|undefined;
+ let confirmedSession:Partial<Stripe.Checkout.Session>|undefined;
  const checkoutKeys:(string|undefined)[]=[];
  const stripe={
   webhooks:signer,
@@ -41,6 +42,7 @@ test("signed Stripe events drive shared Pro quotas, one-time recovery, and Porta
   prices:{async retrieve(){return {active:true,currency:"usd",unit_amount:unitAmount,recurring:{interval:"month",interval_count:1}};}},
   checkout:{sessions:{
    async list(){return {data:latestSession?[latestSession]:[]};},
+   async retrieve(id:string){assert.equal(id,"cs_test_recovered");return confirmedSession;},
    async create(input:Stripe.Checkout.SessionCreateParams,options:Stripe.RequestOptions){
     checkout=input;checkoutKeys.push(options.idempotencyKey);return {url:"https://checkout.stripe.test/start"};
    },
@@ -72,9 +74,11 @@ test("signed Stripe events drive shared Pro quotas, one-time recovery, and Porta
   assert.ok(checkout);
   const visitor=checkout.client_reference_id!;
   assert.ok(cookie.includes(visitor+"."));
+  assert.match(String(checkout.metadata?.startfund_browser??""),/^[a-f0-9]{64}$/);
   assert.deepEqual(checkout,{mode:"subscription",customer:"cus_mock",client_reference_id:visitor,
-   line_items:[{price:config.priceId,quantity:1}],success_url:`${origin}/pricing/success`,cancel_url:`${origin}/pricing`});
-  latestSession={id:"cs_mock",status:"open",url:"https://checkout.stripe.test/reuse"};
+   line_items:[{price:config.priceId,quantity:1}],metadata:{startfund_browser:checkout.metadata?.startfund_browser},
+   success_url:`${origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,cancel_url:`${origin}/pricing`});
+  latestSession={id:"cs_mock",status:"open",url:"https://checkout.stripe.test/reuse",metadata:checkout.metadata};
   const repeated=await handlers.browser(request("checkout",cookie),"checkout");
   assert.deepEqual(await repeated.json(),{url:"https://checkout.stripe.test/reuse"});
   assert.deepEqual(checkoutKeys,["startfund-checkout-cus_mock-first"]);
@@ -110,8 +114,8 @@ test("signed Stripe events drive shared Pro quotas, one-time recovery, and Porta
   assert.deepEqual(await usageIdentity(statusRequest(restoredCookie)),owner);
   assert.equal((await (await handlers.status(statusRequest(restoredCookie))).json()).restored,true);
   assert.equal((await handlers.browser(request("claim",restoredCookie,{rotate:true}),"claim")).status,403);
-  assert.ok(restoredCookie.endsWith(".r"));
-  assert.equal((await handlers.browser(request("claim",restoredCookie.slice(0,-2),{rotate:true}),"claim")).status,404);
+  assert.match(restoredCookie,/\.r\.[a-f0-9-]{36}$/);
+  assert.equal((await handlers.browser(request("claim",restoredCookie.split(".r.")[0],{rotate:true}),"claim")).status,404);
   const portal=await handlers.browser(request("portal",restoredCookie),"portal");
   assert.deepEqual(await portal.json(),{url:"https://billing.stripe.test/manage"});
 
@@ -121,6 +125,10 @@ test("signed Stripe events drive shared Pro quotas, one-time recovery, and Porta
   assert.equal((await handlers.webhook(event("evt_failed","invoice.payment_failed",102,invoice))).status,200);
   assert.equal((await usageIdentity(statusRequest(cookie)))?.plan,"Free");
   assert.equal(await usageIdentity(apiRequest),null);
+  const ownerRestore=await handlers.browser(request("restore",cookie,{key}),"restore");
+  assert.equal(ownerRestore.status,200);
+  assert.equal(ownerRestore.headers.has("set-cookie"),false);
+  let otherBrowser="";
   for(const status of ["past_due","unpaid"]){
    if(status==="unpaid"){
     subscriptionStatus=status;
@@ -129,6 +137,7 @@ test("signed Stripe events drive shared Pro quotas, one-time recovery, and Porta
    const recovery=await handlers.browser(request("restore",undefined,{key}),"restore");
    assert.equal(recovery.status,200,status);
    const billingCookie=recovery.headers.get("set-cookie")!.split(";")[0];
+   otherBrowser=billingCookie;
    const identity=await usageIdentity(statusRequest(billingCookie));
    assert.equal(identity?.actor,owner.actor,status);
    assert.equal(identity?.plan,"Free",status);
@@ -149,10 +158,31 @@ test("signed Stripe events drive shared Pro quotas, one-time recovery, and Porta
   const [count]=await (await db()).all("SELECT count(*) AS n FROM billing_events");
   assert.equal(Number(count.n),6);
 
+  const checkoutTime=Date.now()+60_000;
+  t.mock.method(Date,"now",()=>checkoutTime);
+  latestSession={id:"cs_mock",status:"complete",url:null};
+  assert.equal((await handlers.browser(request("checkout",restoredCookie),"checkout")).status,200);
+  assert.deepEqual(checkoutKeys,["startfund-checkout-cus_mock-first","startfund-checkout-cus_mock-cs_mock"]);
+  latestSession={id:"cs_test_recovered",status:"open",url:"https://checkout.stripe.test/start",metadata:checkout.metadata};
+  assert.equal((await handlers.browser(request("checkout",otherBrowser),"checkout")).status,409);
+  const confirm=(browser:string)=>handlers.browser(request("confirm",browser,{sessionId:"cs_test_recovered"}),"confirm");
+  confirmedSession={...completed,mode:"subscription",status:"open",payment_status:"unpaid",metadata:{startfund_browser:String(checkout.metadata?.startfund_browser??"")}};
+  assert.equal((await confirm(restoredCookie)).status,403);
+  confirmedSession.status="complete";
+  confirmedSession.payment_status="paid";
+  assert.equal((await confirm(otherBrowser)).status,403);
+  const renewed=await confirm(restoredCookie);
+  assert.equal(renewed.status,200);
+  const renewedCookie=renewed.headers.get("set-cookie")!.split(";")[0];
+  assert.equal(renewedCookie,cookie);
+  const retryConfirmation=await confirm(renewedCookie);
+  assert.equal(retryConfirmation.status,200);
+  assert.equal(retryConfirmation.headers.has("set-cookie"),false);
+  t.mock.restoreAll();
   assert.equal((await handlers.webhook(event("evt_restarted","customer.subscription.updated",106,sub))).status,200);
   assert.equal((await handlers.browser(request("claim",undefined,{rotate:true}),"claim")).status,404);
   assert.equal((await handlers.browser(request("claim",cookie),"claim")).status,409);
-  const replacement=await handlers.browser(request("claim",cookie,{rotate:true}),"claim");
+  const replacement=await handlers.browser(request("claim",renewedCookie,{rotate:true}),"claim");
   assert.equal(replacement.status,200);
   assert.equal(replacement.headers.get("cache-control"),"no-store");
   const {key:newKey}=await replacement.json();

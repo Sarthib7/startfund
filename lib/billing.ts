@@ -4,7 +4,7 @@ import {
  claimProKey,recordBillingEvent,rememberBillingCustomer,visitorForProKey,
 } from "./billing-state";
 import {proPrice} from "./plans";
-import {browserVisitor,restoreVisitorCookie,withUsage} from "./usage";
+import {browserVisitor,checkoutBrowserProof,ownerVisitorCookie,restoreVisitorCookie,withUsage} from "./usage";
 
 const json=(value:unknown,status=200)=>Response.json(value,{status,headers:{"Cache-Control":"no-store"}});
 const invalid=()=>json({error:"Invalid billing request."},403);
@@ -13,7 +13,7 @@ const failed=()=>json({error:"Billing is temporarily unavailable. Try again."},5
 const stripeId=(object:string|{id:string}|null|undefined)=>typeof object==="string"?object:object?.id;
 const canCheckout=(status:string)=>status==="canceled"||status==="incomplete_expired";
 type Config=NonNullable<ReturnType<typeof billingConfig>>;
-type BrowserAction="checkout"|"portal"|"restore"|"claim";
+type BrowserAction="checkout"|"confirm"|"portal"|"restore"|"claim";
 
 function siteOrigin(request:Request){
  const configured=process.env.RADAR_PUBLIC_ORIGIN ||
@@ -41,6 +41,8 @@ export function billingHandlers(config:Config|null=billingConfig(),stripe=config
    try{
     if(action==="checkout")return await withUsage(request,"checkout","billing_checkout",async identity=>{
      const visitor=identity.actor.slice("visitor:".length),origin=siteOrigin(request);
+     const browserProof=checkoutBrowserProof(identity.cookie??request.headers.get("cookie"));
+     if(!browserProof)return invalid();
      const account=await billingAccount(visitor);
      if(account?.pro)return json({error:"Pro is already active. Use Manage billing."},409);
      const price=await stripe.prices.retrieve(config.priceId);
@@ -53,10 +55,14 @@ export function billingHandlers(config:Config|null=billingConfig(),stripe=config
      if(subscriptions.data.some(s=>!canCheckout(s.status))||subscriptions.has_more)
       return json({error:"You already have a subscription. Use Manage billing."},409);
      const [latest]=(await stripe.checkout.sessions.list({customer,limit:1})).data;
-     if(latest?.status==="open")return latest.url?json({url:latest.url}):failed();
+     if(latest?.status==="open"){
+      if(latest.metadata?.startfund_browser!==browserProof)return json({error:"A checkout is already open in another browser."},409);
+      return latest.url?json({url:latest.url}):failed();
+     }
      const session=await stripe.checkout.sessions.create({
       mode:"subscription",customer,client_reference_id:visitor,line_items:[{price:config.priceId,quantity:1}],
-      success_url:`${origin}/pricing/success`,cancel_url:`${origin}/pricing`,
+      metadata:{startfund_browser:browserProof},
+      success_url:`${origin}/pricing/success?session_id={CHECKOUT_SESSION_ID}`,cancel_url:`${origin}/pricing`,
      },{idempotencyKey:`startfund-checkout-${customer}-${latest?.id??"first"}`});
      return session.url?json({url:session.url}):failed();
     });
@@ -66,6 +72,8 @@ export function billingHandlers(config:Config|null=billingConfig(),stripe=config
      const visitor=await visitorForProKey(key,"restore");
      if(!visitor)return json({error:"This key can’t restore a billing account."},401);
      const response=json({ok:true});
+     const browser=await browserVisitor(request);
+     if(!browser.cookie&&browser.id===visitor)return response;
      response.headers.append("Set-Cookie",await restoreVisitorCookie(request,visitor,key));
      return response;
     }
@@ -73,6 +81,18 @@ export function billingHandlers(config:Config|null=billingConfig(),stripe=config
     if(cookie)return json({error:"No billing account found on this device."},404);
     const account=await billingAccount(id);
     if(!account)return json({error:"No billing account found on this device."},404);
+    if(action==="confirm"){
+     const input=await request.json().catch(()=>null);
+     if(typeof input?.sessionId!=="string"||!/^cs_(test|live)_[a-zA-Z0-9]+$/.test(input.sessionId))return invalid();
+     const session=await stripe.checkout.sessions.retrieve(input.sessionId);
+     const proof=checkoutBrowserProof(request.headers.get("cookie"));
+     if((restored&&(!proof||session.metadata?.startfund_browser!==proof))||session.client_reference_id!==id||
+      stripeId(session.customer)!==account.customer||session.mode!=="subscription"||session.status!=="complete"||
+      !session.subscription||(session.payment_status!=="paid"&&session.payment_status!=="no_payment_required"))return invalid();
+     const response=json({ok:true});
+     if(restored)response.headers.append("Set-Cookie",await ownerVisitorCookie(request,id));
+     return response;
+    }
     if(action==="claim"){
      if(restored)return json({error:"Use the browser you used for Checkout to manage your Pro API key."},403);
      if(!account.pro)return json({error:"Pro is not active yet."},409);
