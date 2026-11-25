@@ -108,6 +108,20 @@ test("Grants.gov reopens a stale search result when the synopsis extends the dea
  const archived=await enrichUs(closed,async()=>({data:{ost:"ARCHIVED",synopsis}}));
  assert.equal(archived.status,"Closed");
 });
+test("Grants.gov skips placeholder deadline fields before choosing a synopsis date",async()=>{
+ const [undated]=parseUs({errorcode:0,data:{oppHits:[{id:"13",title:"Grant with placeholder date"}]}},at);
+ const synopsis={awardCeiling:null,awardFloor:null,estimatedFunding:null,responseDateStr:"12/15/2026"};
+ for(const closeDate of ["12/31/2099","11/26/2031"]){
+  const dated=await enrichUs(undated,async()=>({data:{ost:"POSTED",synopsis:{...synopsis,closeDate}}}));
+  assert.equal(dated.status,"Open");
+  assert.equal(dated.deadline,"2026-12-15");
+ }
+ const rolling=await enrichUs(undated,async()=>({data:{ost:"POSTED",synopsis:{
+  ...synopsis,closeDate:"12/31/2099",responseDateStr:null,responseDateDesc:"Applications are accepted on a rolling basis.",
+ }}}));
+ assert.equal(rolling.status,"Rolling");
+ assert.equal(rolling.deadline,null);
+});
 test("EU calls keep future deadlines and exclude third-party URLs",()=>{
  const row={reference:"x",url:"https://ec.europa.eu/test",metadata:{title:["EU call"],deadlineDate:["2026-10-01","2027-04-01"],status:["31094502"]}};
  assert.equal(parseEu({results:[row]},at)[0].deadline,"2027-04-01");

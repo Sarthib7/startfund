@@ -34,7 +34,8 @@ function usDate(value?:string|null){
   return month?date(`${m[3]}-${String(month).padStart(2,"0")}-${m[2].padStart(2,"0")}`):null;
 }
 function usDeadline(value:string|null,today:string){
-  return value&&Number(value.slice(0,4))<=Number(today.slice(0,4))+10?value:null;
+  const horizon=`${Number(today.slice(0,4))+5}${today.slice(4)}`;
+  return value&&value<=horizon?value:null;
 }
 export function cleanText(value:string|null|undefined, limit:number) {
   const text=value && decodeHTML(value.replace(/<[^>]*>/g," ")).replace(/\s+/g," ").trim();
@@ -133,10 +134,10 @@ export async function enrichUs(row:Opportunity, read:Reader):Promise<Opportunity
     const description=cleanText(synopsis.synopsisDesc,4500)??undefined;
     const today=row.fetchedAt.slice(0,10), archived=usDate(synopsis.archiveDate);
     const dueText=synopsis.responseDateDesc?.match(/\b(?:applications?|proposals?)\s+due\s*:\s*([a-z]{3,9}\s+\d{1,2},\s+\d{4})\b/i)?.[1];
-    const detailDate=usDate(synopsis.closeDate)??usDate(synopsis.responseDateStr)??usDate(synopsis.responseDate)??usDate(dueText);
-    const expires=usDeadline(detailDate,today);
+    const expires=[synopsis.closeDate,synopsis.responseDateStr,synopsis.responseDate,dueText]
+      .map(value=>usDeadline(usDate(value),today)).find(value=>value!==null)??null;
     const closed=usClosed(ost)||(archived&&archived<=today)||(expires?expires<today:row.status==="Closed");
-    const rolling=(detailDate&&!expires)||(!expires&&/\b(?:applications?|proposals?)\s+(?:(?:are|will be|may be)\s+)?accepted\s+(?:at any time|anytime|on a rolling basis)\b/i.test((description??"")+" "+(synopsis.responseDateDesc??"")));
+    const rolling=!expires&&/\b(?:applications?|proposals?)\s+(?:(?:are|will be|may be)\s+)?accepted\s+(?:at any time|anytime|on a rolling basis)\b/i.test((description??"")+" "+(synopsis.responseDateDesc??""));
     const dateFields=expires?federalTerms(row.title,row.contact?"HHS-NIH":undefined,expires,row.fetchedAt):undefined;
     return {...row,...dateFields,...(closed?{status:"Closed" as const}:rolling?{deadline:null,noticeExpires:undefined,status:"Rolling" as const}:expires?{status:"Open" as const}:{}),
       amount:cash(synopsis.awardCeiling),awardFloor:cash(synopsis.awardFloor),programFunding:cash(synopsis.estimatedFunding),eligibility,
