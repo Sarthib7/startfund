@@ -39,7 +39,10 @@ test("TED normalizes currently open procurement, keeping place-of-performance co
   assert.equal(request.scope,"ACTIVE");
   assert.ok(request.fields.includes("main-classification-proc"));
   assert.match(request.query,/main-classification-proc IN \(72\*, 48\*, 73\*, 302\*, 793\*, 794\*, 642\*, 713\*\)/);
-  assert.match(request.query,/AND NOT main-classification-proc = 45\*/);
+  for(const field of ["main-classification-proc","main-classification-lot","additional-classification-proc","additional-classification-lot"]){
+   assert.ok(request.fields.includes(field));
+   assert.ok(request.query.includes(`NOT ${field} = 45*`));
+  }
   assert.match(request.query,/place-of-performance-country-lot IN \(DEU\)/);
   return {notices:[notice]};
  },["DE"]);
@@ -53,12 +56,20 @@ test("TED drops construction and unclassified notices even when the API returns 
  assert.deepEqual(parseTed({notices:[construction,mixed,unknown,notice]},at).map(o=>o.id),[tender.id]);
 });
 
+test("TED rejects 685481-2026 when construction is listed as an additional procedure or lot CPV",()=>{
+ const engineering={...notice,"publication-number":"685481-2026","main-classification-proc":["71300000"],"main-classification-lot":["71300000"]};
+ for(const field of ["additional-classification-proc","additional-classification-lot","main-classification-lot"]){
+  assert.deepEqual(parseTed({notices:[{...engineering,[field]:["45220000"]}]},at),[]);
+ }
+ assert.deepEqual(parseTed({notices:[{...engineering,"additional-classification-lot":["48000000"]}]},at)[0].cpvCodes,["71300000","48000000"]);
+});
+
 test("saved radar results do not surface tenders from before CPV filtering",async t=>{
  const previous=process.env.RADAR_DB_PATH;
  process.env.RADAR_DB_PATH=":memory:";
  t.after(()=>{if(previous===undefined) delete process.env.RADAR_DB_PATH; else process.env.RADAR_DB_PATH=previous;});
  const match={...tender,score:82,reason:"Matched software"};
- await save("legacy-tenders",demo,{matches:[{...match,id:"legacy",cpvCodes:undefined},match],warnings:[],scannedAt:at});
+ await save("legacy-tenders",demo,{matches:[{...match,id:"legacy",cpvScope:undefined},match],warnings:[],scannedAt:at});
  assert.deepEqual((await saved("legacy-tenders"))?.digest?.matches,[match]);
 });
 

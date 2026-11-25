@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { enrichUs, hasStartupTenderCpv, searchEu, searchTed, searchUs, sources, type Source } from "./sources";
+import { enrichUs, hasCompleteTenderCpv, searchEu, searchTed, searchUs, sources, type Source } from "./sources";
 import { byListingStatus, catalogMatch, catalogWords, euCountryCodes, listingStatus, profileLocations, profileQueries, relevantEvidence, rank, shortlist, type Opportunity, type Profile, type Radar } from "./domain";
 import { factSources, rights, searchCordis, searchNsf, searchUkri, type Fact, type FactSource } from "./facts";
 import { reader, type Snapshot } from "./transport";
@@ -31,7 +31,7 @@ export async function sourceRows(name: Source) {
     const current = name==="Hacker News" ? stored.every(o=>o.kind==="Market signal") :
       name==="EU Funding & Tenders" || name==="Grants.gov" ? stored.every(o=>o.status) :
       name==="Accelerator directory" ? stored.every(o=>o.kind!=="Growth") :
-      name==="TED" ? stored.every(o=>hasStartupTenderCpv(o.cpvCodes)) : true;
+      name==="TED" ? stored.every(hasCompleteTenderCpv) : true;
     if (previous && current && Date.now()-Date.parse(previous.scanned) < ttl) return {items: stored};
     const at = new Date().toISOString();
     try {
@@ -52,7 +52,7 @@ export async function sourceRows(name: Source) {
       await store.batch(writes);
       return {items};
     } catch {
-      const items=name==="TED" ? stored.filter(o=>hasStartupTenderCpv(o.cpvCodes)) : stored;
+      const items=name==="TED" ? stored.filter(hasCompleteTenderCpv) : stored;
       return {items, warning: `${name}: ${previous && (name!=="TED" || items.length) ? "showing cached listings" : "temporarily unavailable"}`};
     }
   })();
@@ -170,7 +170,7 @@ export async function radar(p: Profile):Promise<Radar>{
   const [general,us,eu,tenders,facts]=await Promise.all([
     Promise.all((Object.keys(sources) as Source[]).filter(name=>name!=="Hacker News" && name!=="TED").map(sourceRows)),
     Promise.all(terms.map(queriedUs)),Promise.all(terms.map(queriedEu)),
-    Promise.all(tenderCountries.map(country=>topicalRows("TED","country:"+country,(read,at)=>searchTed(at,read,[country])))),
+    Promise.all(tenderCountries.map(country=>topicalRows("TED","procedure-and-lots:"+country,(read,at)=>searchTed(at,read,[country])))),
     Promise.all(historical),
   ]);
   const detailed=new Set(general.flatMap(result=>result.items.filter(o=>o.source==="Grants.gov"&&(o.description||o.eligibility)).map(o=>o.id)));
@@ -189,7 +189,7 @@ export async function saved(id:string){
   const row=(await (await db()).all("SELECT data,digest FROM profiles WHERE id=?",id))[0] as {data:string;digest:string|null}|undefined;
   if(!row) return null;
   const digest=row.digest ? JSON.parse(row.digest) as Radar : null;
-  if(digest) digest.matches=digest.matches.filter(o=>o.source!=="TED" || hasStartupTenderCpv(o.cpvCodes));
+  if(digest) digest.matches=digest.matches.filter(o=>o.source!=="TED" || hasCompleteTenderCpv(o));
   return {profile:JSON.parse(row.data) as Profile,digest};
 }
 export async function save(id:string,p:Profile,digest:Radar){

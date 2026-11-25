@@ -18,6 +18,8 @@ export const rights:Record<string,string>={
  "Innovate UK":"From Innovate UK’s public Innovation Funding Service; factual competition metadata under the Open Government Licence, with links to original notices.",
  "TED":"EU Publications Office TED Search API; published procurement facts and links to original notices.",
  "Förderdatenbank":"German federal funding database; factual program metadata and official source links.",
+ "UK Find a Grant":"UK Government Find a Grant service; listing metadata and official source links.",
+ "Government program links":"Curated links to the official government publisher; confirm terms and availability on the linked page.",
  "Official program links":"Curated official links and factual program summaries; check terms and availability at the source.",
  "YC batches":"Third-party public index; derived batch and count only, no company records redistributed.",
  "SEC EDGAR":"Public SEC filings; link and factual issuer name only, no individual contacts.",

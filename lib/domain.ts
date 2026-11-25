@@ -8,6 +8,8 @@ export const euCountryCodes={AT:"AUT",BE:"BEL",BG:"BGR",HR:"HRV",CY:"CYP",CZ:"CZ
 const countryNames=new Intl.DisplayNames(["en"],{type:"region",fallback:"none"});
 const country=z.string().trim().toUpperCase().regex(/^[A-Z]{2}$/).transform(code=>code==="UK"?"GB":code)
   .refine(code=>/^[A-Z]{2}$/.test(code) && !["EU","UN","ZZ"].includes(code) && countryNames.of(code)!==undefined,"Enter a valid country code");
+const subdivision=z.string().trim().toUpperCase().regex(/^[A-Z]{2}-[A-Z0-9]{1,3}$/)
+  .refine(code=>code.slice(0,2)!=="UK" && country.safeParse(code.slice(0,2)).success,"Use a country-region code such as US-CA or GB-SCT");
 export const profileSchema = z.object({
   name: z.string().trim().min(1).max(80),
   description: z.string().trim().min(1).max(400),
@@ -15,11 +17,15 @@ export const profileSchema = z.object({
   region: z.enum(regionsKeys()),
   companyCountry: country.optional(),
   developerCountries: z.array(country).max(8).optional(),
+  companySubdivision: subdivision.optional(),
+  developerSubdivisions: z.array(subdivision).max(8).optional(),
   sector: z.string().trim().min(1).max(80),
   needs: z.array(z.enum(kinds)).min(1).max(kinds.length),
   email: z.union([z.email().max(254), z.literal("")]).optional(),
   priorNihAward:z.boolean().optional(),
   plansClinicalTrial:z.boolean().optional(),
+}).refine(p=>!p.companyCountry || !p.companySubdivision || p.companySubdivision.startsWith(p.companyCountry+"-"),{
+ message:"Company region must belong to its country",path:["companySubdivision"],
 });
 export type Profile = z.infer<typeof profileSchema>;
 function regionsKeys(){ return Object.keys(regions) as (keyof typeof regions)[]; }
@@ -27,11 +33,12 @@ export const demo: Profile = { name: "Canopy Labs", description: "AI software to
 export type ListingStatus = "Open"|"Rolling"|"Forthcoming"|"Closed"|"Program link"|"Late applications";
 export type Opportunity = {
   id: string; title: string; kind: (typeof kinds)[number] | "Market signal"; region: "US" | "EU" | "DE" | "UK" | "Global";
-  source: string; url: string; deadline: string | null; amount: number | null; currency: "USD" | "EUR" | "GBP";
+  source: string; url: string; deadline: string | null; amount: number | null; currency: "USD" | "EUR" | "GBP" | "INR" | "AUD" | "SGD";
   eligibility: string | null; fetchedAt: string; signal?: boolean; programId?: string; description?: string;
   status?: ListingStatus; opensAt?: string|null; programme?: string; postedAt?:string; generic?:boolean; contact?:string;
   verifiedAt?:string; noticeExpires?:string; deadlineNote?:string; applicationGuide?:string;
-  awardFloor?:number|null; programFunding?:number|null; prerequisites?:string[]; countries?:string[]; cpvCodes?:string[];
+  awardFloor?:number|null; programFunding?:number|null; prerequisites?:string[]; countries?:string[]; subdivisions?:string[];
+  cpvCodes?:string[]; cpvScope?:"procedure-and-lots";
 };
 export type Match = Opportunity & { score: number; reason: string; regionNote?: string; matchedTerms?:string[] };
 export type Radar = { matches: Match[]; warnings: string[]; scannedAt: string; evidence?: Fact[] };
@@ -113,16 +120,18 @@ export function relevantEvidence(facts: Fact[], profile: Profile): Fact[] {
     .map(({fact}) => fact);
 }
 export function profileLocations(p:Profile) {
-  const base=p.companyCountry ?? (p.region==="US" || p.region==="DE" ? p.region : p.region==="UK" ? "GB" : undefined);
-  const countries=[...new Set([...(base?[base]:[]),...(p.developerCountries??[])])];
-  return {countries,eu:(!p.companyCountry && p.region==="EU") || countries.some(c=>Object.hasOwn(euCountryCodes,c))};
+  const base=p.companyCountry ?? p.companySubdivision?.slice(0,2) ?? (p.region==="US" || p.region==="DE" ? p.region : p.region==="UK" ? "GB" : undefined);
+  const subdivisions=[...(p.companySubdivision?[p.companySubdivision]:[]),...(p.developerSubdivisions??[])];
+  const countries=[...new Set([...(base?[base]:[]),...(p.developerCountries??[]),...subdivisions.map(code=>code.slice(0,2))])];
+  return {countries,subdivisions,eu:(!p.companyCountry && !p.companySubdivision && p.region==="EU") || countries.some(c=>Object.hasOwn(euCountryCodes,c))};
 }
 function regionalNote(o: Opportunity, locations:ReturnType<typeof profileLocations>) {
   const text = o.eligibility ?? "";
   const restriction = text.match(/\b(UK|United Kingdom|EU|European Union|US|U\.S\.|United States)[- ](?:based[- ]only|only)\b|\bonly\s+(UK|United Kingdom|EU|European Union|US|U\.S\.|United States)\b/i);
   const label = restriction?.[1] ?? restriction?.[2];
   const region = label ? /^(?:uk|united kingdom)$/i.test(label) ? "UK" : /^(?:eu|european union)$/i.test(label) ? "EU" : "US" : o.region;
-  const local=o.countries?.length ? o.countries.some(c=>locations.countries.includes(c)) :
+  const local=o.subdivisions?.length ? o.subdivisions.some(code=>locations.subdivisions.includes(code)) :
+    o.countries?.length ? o.countries.some(c=>locations.countries.includes(c)) :
     region==="EU" ? locations.eu : locations.countries.includes(region==="UK"?"GB":region);
   return { local, restricted:region!=="Global" || Boolean(o.countries?.length), note: !local && region !== "Global" ?
     o.countries?.length ? `Place of performance: ${o.countries.join(", ")}` :
@@ -147,18 +156,19 @@ export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[
   const profileText = (p.sector + " " + p.description).toLowerCase();
   const {words,phrases}=profileTopics(profileText);
   const locations=profileLocations(p);
-  const explicitLocation=Boolean(p.companyCountry || p.developerCountries?.length);
+  const explicitLocation=Boolean(p.companyCountry || p.companySubdivision || p.developerCountries?.length || p.developerSubdivisions?.length);
   return items.filter(o => o.kind!=="Market signal" && p.needs.includes(o.kind) && listingStatus(o,day)!=="Closed")
     .flatMap(o => {
       const region = regionalNote(o,locations);
-      if(region.restricted && !region.local && (o.kind==="Tender" || (o.kind==="Grant" && explicitLocation))) return [];
+      if(!region.local && (o.kind==="Tender" || (o.kind==="Grant" && (o.countries?.length || o.subdivisions?.length || (explicitLocation && region.restricted))))) return [];
       const text = (o.title + " " + (o.eligibility ?? "")).toLowerCase();
       const {overlap,related} = topicHits(text,words,phrases);
       const synopsis = topicHits(o.description ?? "",words,phrases);
       const matchedTerms=o.kind==="Grant"?grantTerms(o,p,profileText,words,phrases):
         [...new Set([...overlap,...related,...synopsis.related,...(synopsis.overlap.length>=2 ? synopsis.overlap : [])])];
       const topicScore = Math.min(4,keywords(matchedTerms.join(" ")).size);
-      const broadProgram = o.kind!=="Grant" && (o.generic ?? (o.source === "Accelerator directory" && Boolean(o.programId)));
+      const broadProgram = o.kind==="Grant" ? region.local && o.status==="Program link" && o.generic===true :
+        (o.generic ?? (o.source === "Accelerator directory" && Boolean(o.programId)));
       const early = p.stage === "Idea" || p.stage === "Pre-seed";
       const stageFit = p.stage!=="Not sure" && (early ? /pre-seed|early.stage|phase i\b|accelerat/.test(text) : /scale|growth|phase ii\b/.test(text));
       const domainMismatch = o.kind === "Grant" && (biomedicalGrant.test(o.title)||/\bclinical trials?\b/i.test(o.title)) && !biomedical.test(profileText);

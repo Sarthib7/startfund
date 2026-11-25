@@ -2,6 +2,7 @@ import { z } from "zod";
 import { decodeHTML } from "entities";
 import { euCountryCodes, type Opportunity } from "./domain";
 import { corporateProgramRows } from "./facts";
+import { governmentProgramRows } from "./government-programs";
 import { curatedProgramRows } from "./programs";
 import { post, reader, type Reader } from "./transport";
 const str = z.string().min(1);
@@ -150,14 +151,21 @@ export function parseInnovateUk(html:string,fetchedAt:string):Opportunity[] {
 }
 const startupCpvPrefixes=["72","48","73","302","793","794","642","713"];
 const constructionCpvPrefix="45";
+const tedCpvFields=["main-classification-proc","main-classification-lot","additional-classification-proc","additional-classification-lot"] as const;
 export function hasStartupTenderCpv(codes:string[]|undefined) {
   return Boolean(codes?.some(code=>/^\d{8}$/.test(code) && startupCpvPrefixes.some(prefix=>code.startsWith(prefix))) &&
     !codes.some(code=>code.startsWith(constructionCpvPrefix)));
 }
+export function hasCompleteTenderCpv(o:Opportunity) {
+  return o.cpvScope==="procedure-and-lots" && hasStartupTenderCpv(o.cpvCodes);
+}
 const tedRow=z.object({
   "publication-number":z.string().regex(/^\d+-\d{4}$/),
   "notice-title":z.record(z.string(),str),
-  "main-classification-proc":z.array(z.string()),
+  "main-classification-proc":z.array(z.string()).optional(),
+  "main-classification-lot":z.array(z.string()).optional(),
+  "additional-classification-proc":z.array(z.string()).optional(),
+  "additional-classification-lot":z.array(z.string()).optional(),
   "deadline-receipt-tender-date-lot":z.array(z.string()),
   "place-of-performance-country-lot":z.array(z.string()).optional(),
   "place-of-performance-country-proc":z.array(z.string()).optional(),
@@ -169,14 +177,17 @@ export function parseTed(raw:unknown,fetchedAt:string):Opportunity[] {
   if(timedOut) throw new Error("TED search timed out");
   return notices.flatMap(row=>{
     const {data:r}=tedRow.safeParse(row);
-    if(!r || !hasStartupTenderCpv(r["main-classification-proc"])) return [];
+    if(!r) return [];
+    const primary=[...(r["main-classification-proc"]??[]),...(r["main-classification-lot"]??[])];
+    const cpvCodes=[...new Set(tedCpvFields.flatMap(field=>r[field]??[]))];
+    if(!hasStartupTenderCpv(primary) || !hasStartupTenderCpv(cpvCodes)) return [];
     const deadline=r["deadline-receipt-tender-date-lot"].map(date).filter(d=>d && d>=fetchedAt.slice(0,10)).sort()[0];
     const countries=[...new Set([...(r["place-of-performance-country-lot"]??[]),...(r["place-of-performance-country-proc"]??[])]
       .map(tedCountry).filter(c=>c!==undefined))];
     const title=cleanText(r["notice-title"].eng??Object.values(r["notice-title"])[0],600);
     if(!deadline || !countries.length || !title) return [];
     const id=r["publication-number"];
-    return [{id:`ted-${id}`,title,kind:"Tender",region:"EU",countries,cpvCodes:r["main-classification-proc"],source:"TED",url:`https://ted.europa.eu/en/notice/-/detail/${id}`,
+    return [{id:`ted-${id}`,title,kind:"Tender",region:"EU",countries,cpvCodes,cpvScope:"procedure-and-lots",source:"TED",url:`https://ted.europa.eu/en/notice/-/detail/${id}`,
       deadline,status:"Open",amount:null,currency:"EUR",eligibility:"Place of performance is not bidder eligibility; check the original notice.",
       postedAt:date(r["publication-date"])??undefined,fetchedAt}];
   });
@@ -185,13 +196,19 @@ export async function searchTed(at:string,read:Reader,countries:string[]=Object.
   const codes=Object.entries(euCountryCodes).filter(([country])=>countries.includes(country)).map(([,code])=>code).join(", ");
   if(!codes) return [];
   const cpv=startupCpvPrefixes.map(prefix=>prefix+"*").join(", ");
-  const query=`notice-type IN (cn-standard, cn-social, cn-desg) AND deadline-receipt-tender-date-lot >= today() AND publication-date >= today(-60) AND main-classification-proc IN (${cpv}) AND NOT main-classification-proc = ${constructionCpvPrefix}* AND (place-of-performance-country-lot IN (${codes}) OR place-of-performance-country-proc IN (${codes}))`;
+  const exclude=tedCpvFields.map(field=>`NOT ${field} = ${constructionCpvPrefix}*`).join(" AND ");
+  const query=`notice-type IN (cn-standard, cn-social, cn-desg) AND deadline-receipt-tender-date-lot >= today() AND publication-date >= today(-60) AND (main-classification-proc IN (${cpv}) OR main-classification-lot IN (${cpv})) AND ${exclude} AND (place-of-performance-country-lot IN (${codes}) OR place-of-performance-country-proc IN (${codes}))`;
   return parseTed(await post(read,"https://api.ted.europa.eu/v3/notices/search",{
     query,fields:Object.keys(tedRow.shape),scope:"ACTIVE",limit:60,page:1,
   }),at);
 }
 
 const germanHost="www.foerderdatenbank.de";
+const germanStates:Record<string,string>={
+ "Baden-Württemberg":"BW","Baden-Wuerttemberg":"BW",Bayern:"BY",Berlin:"BE",Brandenburg:"BB",Bremen:"HB",Hamburg:"HH",
+ Hessen:"HE","Mecklenburg-Vorpommern":"MV",Niedersachsen:"NI","Nordrhein-Westfalen":"NW",NRW:"NW","Rheinland-Pfalz":"RP",
+ Saarland:"SL",Sachsen:"SN","Sachsen-Anhalt":"ST","Schleswig-Holstein":"SH",Thüringen:"TH",Thueringen:"TH",
+};
 const germanFeed=`https://${germanHost}/FDB/DE/Service/RSS/Functions/foerderprogram_rssnewsfeed.xml`;
 const xmlText=(value:string)=>value.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g,"$1")
   .replace(/&#(x[\da-f]+|\d+);/gi,(entity,raw:string)=>{
@@ -222,7 +239,10 @@ export function parseGermanGrant({grantType,...entry}:ReturnType<typeof parseGer
   if(type && !/\bZuschuss\b/i.test(type)) return null;
   const area=fields.get("Fördergebiet:")??(entry.url.includes("/Land/")?"State program":"Federal program");
   const applicants=fields.get("Förderberechtigte:");
+  const land=new URL(entry.url).pathname.split("/Land/")[1]?.split("/")[0];
+  const state=germanStates[area]??(land?germanStates[land]:undefined);
   return {...entry,id:"de-grant-"+new URL(entry.url).pathname,kind:"Grant",region:"DE",source:"Förderdatenbank",
+    countries:["DE"],...(state?{subdivisions:[`DE-${state}`]}:{}),
     programme:area??undefined,eligibility:applicants??null,deadline:null,status:"Program link",amount:null,currency:"EUR",fetchedAt};
 }
 async function searchGermanGrants(at:string,read:Reader) {
@@ -254,6 +274,46 @@ async function innovateUk(at:string,read:Reader) {
   }
   return [...rows.values()];
 }
+const ukGrantList="https://www.find-government-grants.service.gov.uk/grants";
+const ukGrantRow=z.object({
+ label:z.string().regex(/^[a-z0-9-]+$/),grantName:str,grantApplicantType:z.array(z.string()),
+ grantLocation:z.array(z.string()),grantShortDescription:z.string().optional(),
+ grantMaximumAward:z.unknown(),grantApplicationOpenDate:z.string().optional(),grantApplicationCloseDate:z.string().optional(),
+});
+const ukRegions:Record<string,string>={England:"GB-ENG",Scotland:"GB-SCT",Wales:"GB-WLS","Northern Ireland":"GB-NIR"};
+export function parseUkGovernmentGrants(html:string,at:string) {
+ const script=html.match(/<script\b[^>]*\bid="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
+ if(!script) throw new Error("Find a Grant listing data unavailable");
+ const {props:{pageProps:{searchResult,totalGrants}}}=z.object({props:z.object({pageProps:z.object({
+  searchResult:z.array(z.unknown()),totalGrants:z.number().int().nonnegative(),
+ })})}).parse(JSON.parse(script[1]));
+ const today=at.slice(0,10);
+ const rows=searchResult.flatMap((raw):Opportunity[]=>{
+  const {data:r}=ukGrantRow.safeParse(raw);
+  if(!r?.grantApplicantType.includes("Private Sector")) return [];
+  const title=cleanText(r.grantName,500);
+  if(!title || /\((?:Fellowship|Bursary)\)\s*$/i.test(title)) return [];
+  const national=r.grantLocation.includes("National");
+  const subdivisions=r.grantLocation.map(area=>ukRegions[area]??(area.endsWith(" England")||area==="Midlands"?"GB-ENG":undefined))
+   .filter((area):area is string=>area!==undefined);
+  if(!national && !subdivisions.length) return [];
+  const opensAt=date(r.grantApplicationOpenDate), deadline=date(r.grantApplicationCloseDate);
+  const status=deadline && deadline<today?"Closed":opensAt && opensAt>today?"Forthcoming":opensAt && deadline?"Open":"Program link";
+  return [{id:"gb-find-"+r.label,title,kind:"Grant",region:"UK",countries:["GB"],
+   ...(!national?{subdivisions:[...new Set(subdivisions)]}:{}),
+   description:cleanText(r.grantShortDescription,3500)??undefined,eligibility:"Listed for private-sector applicants; check the individual grant’s rules.",
+   source:"UK Find a Grant",url:ukGrantList+"/"+r.label,opensAt,deadline,status,currency:"GBP",amount:cash(r.grantMaximumAward),fetchedAt:at}];
+ });
+ return {rows,totalGrants};
+}
+async function searchUkGovernmentGrants(at:string,read:Reader) {
+ const url=ukGrantList+"?searchTerm=innovation";
+ const load=async (page:number)=>parseUkGovernmentGrants(String(await read(url+(page>1?`&page=${page}`:""),{headers:{accept:"text/html"}})),at);
+ const first=await load(1);
+ const rest=await Promise.allSettled(Array.from({length:Math.min(4,Math.max(0,Math.ceil(first.totalGrants/10)-1))},(_,i)=>load(i+2)));
+ const rows=[...first.rows,...rest.flatMap(result=>result.status==="fulfilled"?result.value.rows:[])];
+ return [...new Map(rows.map(row=>[row.id,row])).values()];
+}
 export const sources = {
   "Grants.gov":async (at:string,read:Reader=reader()) => {
     const rows=await searchUs(at,read);
@@ -266,6 +326,8 @@ export const sources = {
     return [...new Map(rows.filter(o=>o.status!=="Closed").map(o=>[o.id,o])).values()];
   },
   "Innovate UK":async(at:string,read:Reader=reader())=>innovateUk(at,read),
+  "UK Find a Grant":async(at:string,read:Reader=reader())=>searchUkGovernmentGrants(at,read),
+  "Government program links":async(at:string)=>governmentProgramRows(at),
   "TED":async(at:string,read:Reader=reader())=>searchTed(at,read),
   "Förderdatenbank":async(at:string,read:Reader=reader())=>searchGermanGrants(at,read),
   "Hacker News":async(at:string,read:Reader=reader())=>{
