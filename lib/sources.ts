@@ -71,9 +71,10 @@ export function parseUs(raw: unknown, fetchedAt: string): Opportunity[] {
     if(!r || (r.oppStatus && r.oppStatus.toLowerCase()!=="posted" && !usClosed(r.oppStatus)) || /^(?:rfi\b|request for information\b|noi\b|notice of intent\b)/i.test(r.title))return [];
     const title=cleanText(r.title,600)??r.title, today=fetchedAt.slice(0,10), postedAt=date(r.postDate??undefined)??date(r.openDate??undefined)??undefined;
     const deadline=usDeadline(usDate(r.closeDate),today), archived=usDate(r.archiveDate);
-    const status=usClosed(r.oppStatus)||(archived&&archived<=today)||(deadline&&deadline<today)?"Closed":deadline?"Open":"Unknown";
+    const sourceClosed=usClosed(r.oppStatus)||(archived!==null&&archived<=today);
+    const status=sourceClosed||(deadline&&deadline<today)?"Closed":deadline?"Open":"Unknown";
     return [{id:`us-${r.id}`,title,kind:"Grant",region:"US",source:"Grants.gov",url:`https://www.grants.gov/search-results-detail/${r.id}`,
-      ...federalTerms(title,r.agencyCode,deadline,fetchedAt),status,postedAt,amount:null,currency:"USD",eligibility:null,fetchedAt}];
+      ...federalTerms(title,r.agencyCode,deadline,fetchedAt),status,...(sourceClosed?{sourceClosed}:{}),postedAt,amount:null,currency:"USD",eligibility:null,fetchedAt}];
   });
 }
 const euRow = z.object({reference:str,url:str,metadata:z.object({
@@ -137,10 +138,11 @@ export async function enrichUs(row:Opportunity, read:Reader):Promise<Opportunity
     const dueText=synopsis.responseDateDesc?.match(/\b(?:applications?|proposals?)\s+due\s*:\s*([a-z]{3,9}\s+\d{1,2},\s+\d{4})\b/i)?.[1];
     const expires=[synopsis.closeDate,synopsis.responseDateStr,synopsis.responseDate,dueText]
       .map(value=>usDeadline(usDate(value),today)).find(value=>value!==null)??null;
-    const closed=usClosed(ost)||(archived&&archived<=today)||(expires?expires<today:row.status==="Closed");
+    const sourceClosed=row.sourceClosed||usClosed(ost)||(archived!==null&&archived<=today);
+    const closed=sourceClosed||(expires?expires<today:row.status==="Closed");
     const rolling=!expires&&/\b(?:applications?|proposals?)\s+(?:(?:are|will be|may be)\s+)?accepted\s+(?:at any time|anytime|on a rolling basis)\b/i.test((description??"")+" "+(synopsis.responseDateDesc??""));
     const dateFields=expires?federalTerms(row.title,row.contact?"HHS-NIH":undefined,expires,row.fetchedAt):undefined;
-    return {...row,...dateFields,...(closed?{status:"Closed" as const}:rolling?{deadline:null,noticeExpires:undefined,deadlineNote:undefined,status:"Rolling" as const}:expires?{status:"Open" as const}:{}),
+    return {...row,...dateFields,...(sourceClosed?{sourceClosed}:{}),...(closed?{status:"Closed" as const}:rolling?{deadline:null,noticeExpires:undefined,deadlineNote:undefined,status:"Rolling" as const}:expires?{status:"Open" as const}:{}),
       amount:cash(synopsis.awardCeiling),awardFloor:cash(synopsis.awardFloor),programFunding:cash(synopsis.estimatedFunding),eligibility,
       prerequisites:[...new Set([...(row.prerequisites??[]),...(dateFields?.prerequisites??[]),...(prior ? ["Requires prior NIH SBIR/STTR award"]:[])])],
       description};

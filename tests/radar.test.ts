@@ -115,6 +115,22 @@ test("Grants.gov reopens a stale search result when the synopsis extends the dea
  const archived=await enrichUs(closed,async()=>({data:{ost:"ARCHIVED",synopsis}}));
  assert.equal(archived.status,"Closed");
 });
+test("Grants.gov never reopens explicit closure or archive evidence from search",async()=>{
+ const rows=parseUs({errorcode:0,data:{oppHits:[
+  {id:"13",title:"Closed grant",oppStatus:"closed"},
+  {id:"14",title:"Archived grant",oppStatus:"archived"},
+  {id:"15",title:"Past archive date",oppStatus:"posted",archiveDate:"11/01/2026"},
+ ]}},at);
+ assert.equal(rows.length,3);
+ for(const row of rows){
+  assert.equal(row.status,"Closed");
+  const enriched=await enrichUs(row,async()=>({data:{ost:"POSTED",synopsis:{
+   awardCeiling:null,awardFloor:null,estimatedFunding:null,closeDate:"12/15/2026",
+  }}}));
+  assert.equal(enriched.status,"Closed");
+  assert.equal(enriched.sourceClosed,true);
+ }
+});
 test("Grants.gov skips placeholder deadline fields before choosing a synopsis date",async()=>{
  const [undated]=parseUs({errorcode:0,data:{oppHits:[{id:"13",title:"Grant with placeholder date"}]}},at);
  const synopsis={awardCeiling:null,awardFloor:null,estimatedFunding:null,responseDateStr:"12/15/2026"};
