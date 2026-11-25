@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { enrichUs, hasCompleteTenderCpv, searchEu, searchTed, searchUs, sources, type Source } from "./sources";
 import { byListingStatus, catalogMatch, catalogWords, euCountryCodes, listingStatus, profileLocations, profileQueries, relevantEvidence, rank, shortlist, type Opportunity, type Profile, type Radar } from "./domain";
 import { factSources, rights, searchCordis, searchNsf, searchUkri, type Fact, type FactSource } from "./facts";
@@ -240,11 +240,18 @@ export async function builderBundle(profile?:Profile) {
     .sort((a,b)=>perkScore(b,profile)-perkScore(a,profile));
 }
 export async function saved(id:string){
-  const row=(await (await db()).all("SELECT data,digest FROM profiles WHERE id=?",id))[0] as {data:string;digest:string|null}|undefined;
-  if(!row) return null;
-  const digest=row.digest ? JSON.parse(row.digest) as Radar : null;
-  if(digest) digest.matches=digest.matches.filter(o=>o.source!=="TED" || hasCompleteTenderCpv(o));
-  return {profile:JSON.parse(row.data) as Profile,digest};
+  const store=await db();
+  for(;;){
+    const row=(await store.all("SELECT data,digest FROM profiles WHERE id=?",id))[0] as {data:string;digest:string|null}|undefined;
+    if(!row) return null;
+    const digest=row.digest ? JSON.parse(row.digest) as Radar : null;
+    if(digest&&!digest.scanId){
+      digest.scanId=randomUUID();
+      if(!await store.run("UPDATE profiles SET digest=? WHERE id=? AND digest=?",JSON.stringify(digest),id,row.digest))continue;
+    }
+    if(digest) digest.matches=digest.matches.filter(o=>o.source!=="TED" || hasCompleteTenderCpv(o));
+    return {profile:JSON.parse(row.data) as Profile,digest};
+  }
 }
 export async function save(id:string,p:Profile,digest:Radar){
   await (await db()).run("INSERT INTO profiles (id,data,digest,updated) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,digest=excluded.digest,updated=excluded.updated",id,JSON.stringify(p),JSON.stringify(digest),new Date(Date.now()).toISOString());
@@ -270,13 +277,14 @@ export async function unsubscribeDigest(token:string) {
   return (await (await db()).run("DELETE FROM digest_subscriptions WHERE unsubscribe=?",token))>0;
 }
 export async function subscriptions(){
-  return (await (await db()).all(`SELECT p.id,p.data,p.updated,s.sent,s.email,s.unsubscribe FROM profiles p JOIN digest_subscriptions s
+  return (await (await db()).all(`SELECT p.id,p.data,p.updated,json_extract(p.digest,'$.scanId') AS scan_id,s.sent,s.email,s.unsubscribe FROM profiles p JOIN digest_subscriptions s
     ON p.id=s.profile_id WHERE s.confirmed IS NOT NULL`))
     .map(row=>({id:String(row.id),profile:JSON.parse(String(row.data)) as Profile,sent:row.sent ? String(row.sent) : null,
-      email:String(row.email),unsubscribe:String(row.unsubscribe),version:String(row.updated)}));
+      email:String(row.email),unsubscribe:String(row.unsubscribe),version:{updated:String(row.updated),scanId:typeof row.scan_id==="string"?row.scan_id:null}}));
 }
-export async function updateDigest(id:string,digest:Radar,version:string){
-  return (await (await db()).run("UPDATE profiles SET digest=? WHERE id=? AND updated=?",JSON.stringify(digest),id,version))>0;
+export async function updateDigest(id:string,digest:Radar,version:{updated:string;scanId:string|null}){
+  return (await (await db()).run("UPDATE profiles SET digest=? WHERE id=? AND updated=? AND json_extract(digest,'$.scanId') IS ?",
+    JSON.stringify({...digest,scanId:randomUUID()}),id,version.updated,version.scanId))>0;
 }
 export async function canDeliverDigest(id:string,unsubscribe:string){
   return Boolean((await (await db()).all("SELECT 1 FROM digest_subscriptions WHERE profile_id=? AND unsubscribe=? AND confirmed IS NOT NULL",id,unsubscribe))[0]);
