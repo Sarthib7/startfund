@@ -110,6 +110,7 @@ function grantTerms(o:Opportunity,p:Profile,profileText:string,words:Map<string,
     const match=scope.match(thermal)?.[0]??scope.match(industrialDecarbonization)?.[0];
     if(match)return [match.toLowerCase()];
     const sectorPhrases=[...relatedTopics(p.sector),...(/\bclimate\b/i.test(p.sector)?["clean energy"]:[])];
+    sector.delete("clean");
     const {overlap,related}=topicHits(scope,sector,sectorPhrases);
     return [...new Set([...related,...overlap])];
   }

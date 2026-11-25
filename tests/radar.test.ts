@@ -52,6 +52,13 @@ test("heat-pump profiles keep broader clean-energy grants without the core-topic
   assert.ok(matches[1].score<=49);
  }
 });
+test("heat-pump profiles do not match clean-water grants on clean alone",()=>{
+ const profile={...demo,stage:"Pre-seed" as const,region:"US" as const,sector:"Clean energy",description:"Heat pumps for industrial process heat."};
+ const cleanWater={...grant,title:"Clean water grant",deadline:"2026-12-31"};
+ const matches=rank([cleanWater],profile,Date.parse(at));
+ assert.deepEqual(matches[0].matchedTerms,[]);
+ assert.deepEqual(shortlist(matches),[]);
+});
 test("Grants.gov uses close and archive evidence, not posting age, and decodes title entities",()=>{
  const [rolling,undated,expired,archived,archiveDate]=parseUs({errorcode:0,data:{oppHits:[
   {id:"41",title:"Law &amp; Science &ndash; rolling",closeDate:"10/15/2076"},
