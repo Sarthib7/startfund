@@ -122,6 +122,22 @@ test("Grants.gov skips placeholder deadline fields before choosing a synopsis da
  assert.equal(rolling.status,"Rolling");
  assert.equal(rolling.deadline,null);
 });
+test("Grants.gov replaces NIH notice expiration metadata when the synopsis revises the deadline",async()=>{
+ const [parent]=parseUs({errorcode:0,data:{oppHits:[{
+  id:"13",title:"NIH Parent SBIR (R43/R44)",agencyCode:"HHS-NIH",closeDate:"04/05/2027",
+ }]}},at);
+ assert.equal(parent.noticeExpires,"2027-04-05");
+ const revise=(closeDate:string)=>enrichUs(parent,async()=>({data:{ost:"POSTED",synopsis:{
+  awardCeiling:null,awardFloor:null,estimatedFunding:null,closeDate,
+ }}}));
+ const revised=await revise("12/15/2026");
+ assert.equal(revised.deadline,"2026-12-15");
+ assert.equal(revised.noticeExpires,undefined);
+ assert.equal(revised.deadlineNote,undefined);
+ const extended=await revise("09/05/2027");
+ assert.equal(extended.deadline,"2027-01-05");
+ assert.equal(extended.noticeExpires,"2027-09-05");
+});
 test("EU calls keep future deadlines and exclude third-party URLs",()=>{
  const row={reference:"x",url:"https://ec.europa.eu/test",metadata:{title:["EU call"],deadlineDate:["2026-10-01","2027-04-01"],status:["31094502"]}};
  assert.equal(parseEu({results:[row]},at)[0].deadline,"2027-04-01");

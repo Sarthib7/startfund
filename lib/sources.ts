@@ -58,8 +58,9 @@ function federalTerms(title:string,agency:string|undefined,expires:string|null,f
   const prior=nih && /\b(?:CRP|commercialization readiness pilot|phase iib|phase ii[- ]only)\b/i.test(title);
   const trial=/\b(?:clinical trials?|CT)\s*(?:[-:–]\s*)?required\b/i.test(title);
   const next=parent ? nextNihDue(fetchedAt.slice(0,10),expires) : null;
-  return {deadline:next??expires,...(next ? {noticeExpires:expires??undefined,deadlineNote:"Standard NIH due date; verify the exact cycle in the NOFO.",applicationGuide:nihCalendar} :
-    {applicationGuide:"https://www.grants.gov/applicants/apply-for-grants"}),
+  return {deadline:next??expires,noticeExpires:next?expires??undefined:undefined,
+    deadlineNote:next?"Standard NIH due date; verify the exact cycle in the NOFO.":undefined,
+    applicationGuide:next?nihCalendar:"https://www.grants.gov/applicants/apply-for-grants",
     ...(parent ? {contact:"SEEDinfo@nih.gov"} : {}),
     prerequisites:[...(prior?["Requires prior NIH SBIR/STTR award"]:[]),...(trial?["Clinical trial required"]:[])]};
 }
@@ -139,7 +140,7 @@ export async function enrichUs(row:Opportunity, read:Reader):Promise<Opportunity
     const closed=usClosed(ost)||(archived&&archived<=today)||(expires?expires<today:row.status==="Closed");
     const rolling=!expires&&/\b(?:applications?|proposals?)\s+(?:(?:are|will be|may be)\s+)?accepted\s+(?:at any time|anytime|on a rolling basis)\b/i.test((description??"")+" "+(synopsis.responseDateDesc??""));
     const dateFields=expires?federalTerms(row.title,row.contact?"HHS-NIH":undefined,expires,row.fetchedAt):undefined;
-    return {...row,...dateFields,...(closed?{status:"Closed" as const}:rolling?{deadline:null,noticeExpires:undefined,status:"Rolling" as const}:expires?{status:"Open" as const}:{}),
+    return {...row,...dateFields,...(closed?{status:"Closed" as const}:rolling?{deadline:null,noticeExpires:undefined,deadlineNote:undefined,status:"Rolling" as const}:expires?{status:"Open" as const}:{}),
       amount:cash(synopsis.awardCeiling),awardFloor:cash(synopsis.awardFloor),programFunding:cash(synopsis.estimatedFunding),eligibility,
       prerequisites:[...new Set([...(row.prerequisites??[]),...(dateFields?.prerequisites??[]),...(prior ? ["Requires prior NIH SBIR/STTR award"]:[])])],
       description};
