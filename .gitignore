@@ -1,0 +1,9 @@
+node_modules/
+.next/
+.eve/
+.output/
+.radar/
+.env*
+!.env.example
+next-env.d.ts
+*.tsbuildinfo
