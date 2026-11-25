@@ -1,12 +1,12 @@
 "use client";
 import { useState } from "react";
 
-export function ShareControls({publicPath}:{publicPath?:string}){
+export function ShareControls({publicPath,scanId}:{publicPath?:string;scanId?:string}){
  const [open,setOpen]=useState(false),[busy,setBusy]=useState(false),[url,setUrl]=useState(""),[message,setMessage]=useState("");
  async function publish(){
   setBusy(true);setMessage("");
   try{
-   const response=await fetch("/api/share",{method:"POST",headers:{"content-type":"application/json"},body:"{}"});
+   const response=await fetch("/api/share",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({scanId})});
    const data=await response.json();
    if(!response.ok)throw new Error(data.error??"Could not create link.");
    setUrl(new URL(data.path,location.origin).href);

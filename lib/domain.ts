@@ -54,7 +54,7 @@ export type Opportunity = {
   targetStages?:Exclude<Profile["stage"],"Not sure">[]; focusTopics?:string[];
 };
 export type Match = Opportunity & { score: number; reason: string; regionNote?: string; matchedTerms?:string[]; localGovernmentGrant?: true };
-export type Radar = { matches: Match[]; warnings: string[]; scannedAt: string; evidence?: Fact[] };
+export type Radar = { matches: Match[]; warnings: string[]; scannedAt: string; evidence?: Fact[]; scanId?:string };
 const minimumRadarScore = 30;
 const nonTopicalWords = new Set([
   "with","that","their","from","help","this","and","for","the","use",
