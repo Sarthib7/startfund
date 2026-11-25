@@ -3,16 +3,17 @@ export type Snapshot = { url:string; body:string; etag:string|null; modified:str
 export function reader(options:{contact?:string; lookUp?:(url:string)=>Snapshot|undefined; capture?:(s:Snapshot)=>void}={}):Reader{
  return async (url,init)=>{
   const headers=new Headers(init?.headers);
-  headers.set("accept","application/json");
+  if (!headers.has("accept")) headers.set("accept","application/json");
+  const html=headers.get("accept")==="text/html";
   headers.set("user-agent",["Startfund/0.1", options.contact || "https://github.com/Sarthib7/startfund"].join(" "));
   const previous=(!init?.method || init.method==="GET") ? options.lookUp?.(url) : undefined;
   if(previous?.etag) headers.set("if-none-match",previous.etag);
   if(previous?.modified) headers.set("if-modified-since",previous.modified);
   const r=await fetch(url,{...init,headers,signal:AbortSignal.timeout(8000),cache:"no-store"});
-  if(r.status===304 && previous) return JSON.parse(previous.body);
+  if(r.status===304 && previous) return html ? previous.body : JSON.parse(previous.body);
   if(!r.ok) throw new Error(`Source HTTP ${r.status}`);
   const original=await r.text();
-  const parsed=JSON.parse(original);
+  const parsed=html ? original : JSON.parse(original);
   let body=original;
   if(new URL(url).hostname==="api.grants.gov" && typeof parsed==="object" && parsed?.token){
     const {token:_token,...rest}=parsed;

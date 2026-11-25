@@ -2,10 +2,11 @@ import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { sources, type Source } from "./sources";
-import { rank, shortlist, type Opportunity, type Profile, type Radar } from "./domain";
-import { factSources, rights, type Fact, type FactSource } from "./facts";
+import { enrichUs, searchEu, searchUs, sources, type Source } from "./sources";
+import { byListingStatus, catalogMatch, listingStatus, profileQueries, relevantEvidence, rank, shortlist, type Opportunity, type Profile, type Radar } from "./domain";
+import { factSources, rights, searchCordis, searchNsf, searchUkri, type Fact, type FactSource } from "./facts";
 import { reader, type Snapshot } from "./transport";
+import { perkScore } from "./programs";
 
 let database: DatabaseSync | undefined;
 function db() {
@@ -14,6 +15,7 @@ function db() {
     const path = configured===":memory:" ? configured : resolve(/*turbopackIgnore: true*/ configured || ".radar/startfund.sqlite");
     if (path!==":memory:") mkdirSync(dirname(path),{recursive:true});
     database = new DatabaseSync(path);
+    database.function("catalog_match",(q,text)=>Number(catalogMatch(String(q),String(text))));
     database.exec("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=4000; CREATE TABLE IF NOT EXISTS sources (name TEXT PRIMARY KEY, scanned TEXT NOT NULL, data TEXT NOT NULL); CREATE TABLE IF NOT EXISTS profiles (id TEXT PRIMARY KEY, data TEXT NOT NULL, digest TEXT, sent TEXT, updated TEXT NOT NULL);");
     database.exec(`
       CREATE TABLE IF NOT EXISTS raw_snapshots (id INTEGER PRIMARY KEY, source TEXT NOT NULL, url TEXT NOT NULL, fetched TEXT NOT NULL, rights TEXT NOT NULL, body TEXT NOT NULL, etag TEXT, modified TEXT);
@@ -49,7 +51,10 @@ export async function sourceRows(name: Source) {
     const store = db();
     const previous = store.prepare("SELECT scanned,data FROM sources WHERE name = ?").get(name) as {scanned:string;data:string}|undefined;
     const stored: Opportunity[] = previous ? JSON.parse(previous.data) : [];
-    if (previous && Date.now()-Date.parse(previous.scanned) < ttl) return {items: stored};
+    const current = name==="Hacker News" ? stored.every(o=>o.kind==="Market signal") :
+      name==="EU Funding & Tenders" || name==="Grants.gov" ? stored.every(o=>o.status) :
+      name==="Accelerator directory" ? stored.every(o=>o.kind!=="Growth") : true;
+    if (previous && current && Date.now()-Date.parse(previous.scanned) < ttl) return {items: stored};
     const at = new Date().toISOString();
     try {
       const items = await sources[name](at,auditedRead(name,at));
@@ -60,10 +65,11 @@ export async function sourceRows(name: Source) {
           if(item.programId) store.prepare("INSERT INTO programs VALUES (?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name").run(item.programId,item.title);
           store.prepare("INSERT INTO opportunities VALUES (?,?,?,?)").run(item.id,name,item.programId??null,JSON.stringify(item));
           const before=stored.find(x=>x.id===item.id);
-          const change=item.signal ? "Source signal" : before && before.deadline!==item.deadline ? "Deadline changed" : !before && previous ? "Newly observed" : null;
+          const change=item.signal ? "Market signal" : before && before.deadline!==item.deadline ? "Deadline changed" : !before && previous ? "Newly observed" : null;
           if(change){
             const id=item.signal ? item.id : `${item.id}-${at}`;
-            store.prepare("INSERT OR IGNORE INTO signals VALUES (?,?,?,?)").run(id,name,at,JSON.stringify({id,title:item.title,kind:change,source:name,url:item.url,observed:at,rights:rights[name]}));
+            store.prepare("INSERT INTO signals VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET observed=excluded.observed,data=excluded.data")
+              .run(id,name,item.postedAt??at,JSON.stringify({id,title:item.title,kind:change,source:name,url:item.url,observed:item.postedAt??at,postedAt:item.postedAt,fetchedAt:at,rights:rights[name]}));
           }
         }
         store.prepare("INSERT INTO sources VALUES (?,?,?) ON CONFLICT(name) DO UPDATE SET scanned=excluded.scanned,data=excluded.data").run(name,at,JSON.stringify(items));
@@ -106,28 +112,83 @@ export function refreshFacts(name:FactSource):Promise<string|undefined>{
   })().finally(()=>ongoing.delete(name));
   ongoing.set(name,task);return task;
 }
-type Signal={id:string;title:string;kind:string;source:string;url:string;observed:string;rights:string};
+type Signal={id:string;title:string;kind:string;source:string;url:string;observed:string;rights:string;postedAt?:string;fetchedAt?:string};
+type QueryResult<T>={items:T[];warning?:string};
+const topicalCache=new Map<string,{until:number;result:Promise<QueryResult<unknown>>}>();
+const activeQueries=new Map<string,Promise<QueryResult<unknown>>>();
+function topicalRows<T>(name:Source|FactSource,key:string,load:(read:ReturnType<typeof auditedRead>,at:string)=>Promise<T[]>):Promise<QueryResult<T>> {
+  const id=JSON.stringify([name,key]),cached=topicalCache.get(id),running=activeQueries.get(id);
+  if(running) return running as Promise<QueryResult<T>>;
+  if(cached&&cached.until>Date.now()) return cached.result as Promise<QueryResult<T>>;
+  if(activeQueries.size>=36) return Promise.resolve({items:[],warning:`${name}: topical search busy`});
+  const at=new Date().toISOString();
+  const result=load(auditedRead(name,at),at).then(items=>({items})).catch(()=>({items:[],warning:`${name}: topical search unavailable`}));
+  activeQueries.set(id,result);
+  void result.then(value=>{
+    activeQueries.delete(id);
+    topicalCache.delete(id);
+    if(topicalCache.size>=128) topicalCache.delete(topicalCache.keys().next().value!);
+    topicalCache.set(id,{until:Date.now()+(("warning" in value) ? 60_000 : ttl),result});
+  });
+  return result;
+}
+function mergeOpportunities(rows:Opportunity[]) {
+  const byId=new Map<string,Opportunity>();
+  for(const row of rows){
+    const earlier=byId.get(row.id);
+    if(!earlier || row.description || (!earlier.description&&row.fetchedAt>earlier.fetchedAt)) byId.set(row.id,row);
+  }
+  return [...byId.values()];
+}
+function queriedUs(q:string){return topicalRows("Grants.gov","keyword:"+q,(read,at)=>searchUs(at,read,q));}
+function queriedEu(q:string){return topicalRows("EU Funding & Tenders","keyword:"+q,(read,at)=>searchEu(at,read,q));}
+function opportunityText(o:Opportunity){
+  return [o.title,o.source,o.kind,o.description,o.programme,o.eligibility,o.kind==="VC"?"venture capital investor":"",o.id].join(" ");
+}
 export async function catalog(query:{q?:string; source?:string; limit?:number}={}){
-  const [opportunities,factWarnings]=await Promise.all([
+  const term=query.q?.trim()??"", queryTerm=term.toLowerCase().match(/[a-z0-9][a-z0-9-]*/g)?.slice(0,6).join(" ")??"";
+  const topical = queryTerm && !/^(?:accelerator|grant|vc|perks|growth|nsf)$/i.test(queryTerm) ?
+    [...(!query.source||query.source==="Grants.gov"?[queriedUs(queryTerm)]:[]),...(!query.source||query.source==="EU Funding & Tenders"?[queriedEu(queryTerm)]:[])] : [];
+  const [general,factWarnings,extra]=await Promise.all([
     Promise.all((Object.keys(sources) as Source[]).filter(n=>!query.source||n===query.source).map(sourceRows)),
     Promise.all((Object.keys(factSources) as FactSource[]).filter(n=>!query.source||n===query.source).map(refreshFacts)),
+    Promise.all(topical),
   ]);
-  const store=db(), term=query.q?.toLowerCase().trim()??"", limit=query.limit??24;
-  const isMatch=(s:string)=>s.toLowerCase().includes(term);
+  const store=db(), limit=query.limit??24;
+  const isMatch=(s:string)=>catalogMatch(term,s);
   const filter=(s:string)=>!query.source||query.source===s;
-  const warnings=[...opportunities.flatMap(x=>x.warning?[x.warning]:[]),...factWarnings.filter(s=>typeof s==="string")];
+  const warnings=[...new Set([...general,...extra].flatMap(x=>x.warning?[x.warning]:[]).concat(factWarnings.filter((s):s is string=>!!s)))];
   return {
-    opportunities:opportunities.flatMap(x=>x.items).filter(x=>!x.signal && (!x.deadline||x.deadline>=new Date().toISOString().slice(0,10)) && isMatch(x.title+" "+(x.eligibility??""))).slice(0,limit),
-    evidence:store.prepare("SELECT data FROM evidence ORDER BY rowid DESC").all().map(row=>JSON.parse(String(row.data)) as Fact).filter(x=>filter(x.source)&&isMatch(x.entity+" "+x.title)).sort((a,b)=>(b.observed??"").localeCompare(a.observed??"")).slice(0,limit),
+    opportunities:mergeOpportunities([...general,...extra].flatMap(x=>x.items)).filter(x=>!x.signal && (term || listingStatus(x)!=="Closed") && isMatch(opportunityText(x))).sort(byListingStatus).slice(0,limit),
+    evidence:store.prepare("SELECT data FROM evidence ORDER BY rowid DESC").all().map(row=>JSON.parse(String(row.data)) as Fact).filter(x=>filter(x.source)&&isMatch([x.source,x.entity,x.title].join(" "))).sort((a,b)=>(b.observed??"").localeCompare(a.observed??"")).slice(0,limit),
     signals:store.prepare(`SELECT data FROM signals WHERE (?1 IS NULL OR source=?1)
-      AND instr(lower(json_extract(data,'$.title')),?2)>0 ORDER BY observed DESC LIMIT ?3`)
+      AND catalog_match(?2,json_extract(data,'$.title')) ORDER BY observed DESC LIMIT ?3`)
       .all({"?1":query.source??null,"?2":term,"?3":limit}).map(row=>JSON.parse(String(row.data)) as Signal),
     warnings,
   };
 }
 export async function radar(p: Profile):Promise<Radar>{
-  const outputs=await Promise.all((Object.keys(sources) as Source[]).map(sourceRows));
-  return {matches:shortlist(rank(outputs.flatMap(o=>o.items),p)),warnings:outputs.flatMap(o=>o.warning?[o.warning]:[]),scannedAt:new Date().toISOString()};
+  const terms=p.needs.includes("Grant") ? profileQueries(p) : [];
+  const evidenceTerms=terms.slice(0,2);
+  const historical=evidenceTerms.flatMap(q=>[
+    topicalRows("NSF Awards",q,(read,at)=>searchNsf(read,at,q)),
+    topicalRows("CORDIS",q,(read,at)=>searchCordis(read,at,q)),
+    topicalRows("UKRI GtR",q,(read,at)=>searchUkri(read,at,q).catch(()=>searchUkri(read,at,q.split(" ").at(-1)))),
+  ]);
+  const [general,us,eu,facts]=await Promise.all([
+    Promise.all((Object.keys(sources) as Source[]).filter(name=>name!=="Hacker News").map(sourceRows)),
+    Promise.all(terms.map(queriedUs)),Promise.all(terms.map(queriedEu)),Promise.all(historical),
+  ]);
+  const usRows=mergeOpportunities(us.flatMap(result=>result.items.filter(o=>!o.prerequisites?.length && !/clinical trials?|\bNIH\b/i.test(o.title)).slice(0,5)));
+  const enrich=await Promise.all(usRows.slice(0,12).map(row=>topicalRows("Grants.gov",row.id,async read=>[await enrichUs(row,read)])));
+  const all=mergeOpportunities([...general,...us,...eu,...enrich].flatMap(x=>x.items));
+  const warnings=[...new Set([...general,...us,...eu,...facts].flatMap(r=>r.warning?[r.warning]:[]))];
+  return {matches:shortlist(rank(all,p)),evidence:relevantEvidence(facts.flatMap(r=>r.items),p).slice(0,8),warnings,scannedAt:new Date().toISOString()};
+}
+export async function builderBundle(profile?:Profile) {
+  const results=await Promise.all([sourceRows("Accelerator directory"),sourceRows("Official program links")]);
+  return results.flatMap(r=>r.items).filter(item=>item.kind==="Perks")
+    .sort((a,b)=>perkScore(b,profile)-perkScore(a,profile));
 }
 export function saved(id:string){
   const row=db().prepare("SELECT data,digest FROM profiles WHERE id=?").get(id) as {data:string;digest:string|null}|undefined;

@@ -11,6 +11,8 @@ export const profileSchema = z.object({
   sector: z.string().trim().min(1).max(80),
   needs: z.array(z.enum(kinds)).min(1).max(kinds.length),
   email: z.union([z.email().max(254), z.literal("")]).optional(),
+  priorNihAward:z.boolean().optional(),
+  plansClinicalTrial:z.boolean().optional(),
 });
 export type Profile = z.infer<typeof profileSchema>;
 function regionsKeys(){ return Object.keys(regions) as (keyof typeof regions)[]; }
@@ -21,6 +23,8 @@ export type Opportunity = {
   source: string; url: string; deadline: string | null; amount: number | null; currency: "USD" | "EUR" | "GBP";
   eligibility: string | null; fetchedAt: string; signal?: boolean; programId?: string; description?: string;
   status?: ListingStatus; opensAt?: string|null; programme?: string; postedAt?:string; generic?:boolean; contact?:string;
+  verifiedAt?:string; noticeExpires?:string; deadlineNote?:string; applicationGuide?:string;
+  awardFloor?:number|null; programFunding?:number|null; prerequisites?:string[];
 };
 export type Match = Opportunity & { score: number; reason: string; regionNote?: string; matchedTerms?:string[] };
 export type Radar = { matches: Match[]; warnings: string[]; scannedAt: string; evidence?: Fact[] };
@@ -31,7 +35,7 @@ const nonTopicalWords = new Set([
   "tech","technology","technologies","program","funding","solution","solutions","reduce","reducing",
   "build","building","make","making","platform","using","people","teams","users","into",
 ]);
-const topicWords = (text: string) => (text.toLowerCase().match(/[a-z][a-z0-9]{2,}/g) ?? [])
+const topicWords = (text: string) => (text.toLowerCase().match(/\b(?:ai|[a-z][a-z0-9]{2,})\b/g) ?? [])
   .filter(word => !nonTopicalWords.has(word));
 const stem=(word:string)=>word === "existing" ? word : word.replace(/^([a-z]{5,}?)(?:ers?|ing|s)$/, "$1");
 const keywords = (text: string) => new Set(topicWords(text).map(stem));
@@ -97,7 +101,7 @@ export function catalogMatch(query:string,text:string) {
 export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[] {
   const day = new Date(now).toISOString().slice(0,10);
   const profileText = (p.sector + " " + p.description).toLowerCase();
-  const biomedical = /\b(?:health(?:care)?|medical|bio(?:tech|medical)|clinical|therapeutic|diagnostic|pharma\w*|patient\w*)\b/;
+  const biomedical = /\b(?:health(?:care)?|medical|bio(?:tech\w*|medical)|clinical|therapeutic\w*|diagnostic\w*|pharma\w*|patient\w*)\b/;
   const {words,phrases}=profileTopics(profileText);
   return items.filter(o => o.kind!=="Market signal" && p.needs.includes(o.kind) && listingStatus(o,day)!=="Closed")
     .map(o => {
@@ -119,18 +123,22 @@ export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[
         (o.signal ? 4 : 0) - (listingStatus(o,day)==="Forthcoming" ? 10 : 0);
       const topic = domainMismatch ? "Biomedical grant outside your stated focus" : broadProgram ? "General startup program" :
         matchedTerms.length ? `Matched: ${matchedTerms.join(", ")}` : "No topical match";
-      const cap = domainMismatch || (!broadProgram && !topicScore) ? 20 : !broadProgram && topicScore===1 ? 57 : 99;
+      const needsPrior=o.prerequisites?.includes("Requires prior NIH SBIR/STTR award") && !p.priorNihAward;
+      const needsTrial=o.prerequisites?.includes("Clinical trial required") && p.plansClinicalTrial!==true;
+      const cap = domainMismatch ? 15 : !broadProgram && !topicScore ? 20 : needsPrior || needsTrial ? 36 : !broadProgram && topicScore===1 ? 57 : 99;
       return {...o, score: Math.max(0,Math.round(Math.min(cap,score))), regionNote:region.note,matchedTerms,
-        reason: [topic, region.local ? "Matches your region" : region.note ?? "Global listing", stageFit ? "Stage signal" : "", days <= 14 ? "Closing soon" : "", o.signal ? "News signal, not an open application" : "Confirm eligibility at the source"].filter(Boolean).join(" · ")};
+        reason: [topic, region.local ? "Matches your region" : region.note ?? "Global listing", ...(o.prerequisites??[]), stageFit ? "Stage signal" : "", days <= 14 ? "Closing soon" : "", o.signal ? "News signal, not an open application" : "Confirm eligibility at the source"].filter(Boolean).join(" · ")};
     }).sort((a,b) => b.score-a.score || (a.deadline ?? "9999").localeCompare(b.deadline ?? "9999") || a.id.localeCompare(b.id));
 }
 export function template(p: Profile, m: Match) {
-  const purpose = m.signal ? "Could you point me to the right person to ask about relevant founder opportunities?" : "Could you confirm whether we may be a fit and share the best next step?";
+  const federal = m.source==="Grants.gov" || m.id==="nsf-seed";
+  const purpose = federal ? "Could you clarify whether our project falls within the scope of the notice and whether any prerequisites apply before we prepare an application?" :
+    m.signal ? "Could you point me to the right person to ask about relevant founder opportunities?" : "Could you confirm whether we may be a fit and share the best next step?";
   const amount=m.amount ? new Intl.NumberFormat("en",{style:"currency",currency:m.currency,maximumFractionDigits:0}).format(m.amount) : null;
   const terms=m.matchedTerms?.length ? `The listing’s focus on ${m.matchedTerms.join(", ")} stood out to us. ` : "";
   const details=[m.deadline ? `listed deadline: ${m.deadline}`:null,amount ? `listed award: ${amount}`:null].filter(Boolean).join("; ");
   return { why: m.reason, subject: `${p.name} — ${m.title}`,
-    body: `Hello,\n\nI’m reaching out from ${p.name}, a ${p.stage.toLowerCase()} startup working on ${p.sector}. ${p.description}\n\nI came across “${m.title}”${details ? ` (${details})` : ""}. ${terms}${purpose}\n\nThank you,\nThe ${p.name} team`, mode: "Template" };
+    body: `Hello${federal?" Program Officer":""},\n\nI’m reaching out from ${p.name}, a ${p.stage.toLowerCase()} startup working on ${p.sector}. ${p.description}\n\nI came across “${m.title}”${details ? ` (${details})` : ""}. ${terms}${purpose}${m.applicationGuide ? `\n\nApplication checklist: ${m.applicationGuide}` : ""}\n\nThank you,\nThe ${p.name} team`, mode: "Template" };
 }
 
 export function shortlist(matches: Match[], limit = 14): Match[] {

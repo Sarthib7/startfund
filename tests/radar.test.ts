@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { demo, rank, shortlist, template, type Opportunity } from "../lib/domain";
+import { catalogMatch, demo, profileQueries, rank, shortlist, template, type Opportunity } from "../lib/domain";
 import { digestHtml } from "../lib/digest";
-import { parseEu, parseHn, parseUs } from "../lib/sources";
+import { parseEu, parseHn, parseInnovateUk, parseUs } from "../lib/sources";
 import { cordisFacts, nsfFacts, secFacts, ukriFact, ycFacts } from "../lib/facts";
 
 const at="2026-11-25T12:00:00Z";
@@ -33,8 +33,10 @@ test("competitive calls retain their own identity, URL, deadline and status",()=
  ]);
 });
 test("HN results are signals and unsafe links fall back to the discussion",()=>{
- const [result]=parseHn({hits:[{objectID:"123",title:"VC news",url:"javascript:evil()"}]},at,"VC");
+ const [result]=parseHn({hits:[{objectID:"123",title:"VC news",url:"javascript:evil()",created_at_i:Date.parse("2026-11-18T09:00:00Z")/1000}]},at);
  assert.equal(result.signal,true);
+ assert.equal(result.kind,"Market signal");
+ assert.equal(result.postedAt,"2026-11-18T09:00:00.000Z");
  assert.equal(result.url,"https://news.ycombinator.com/item?id=123");
 });
 test("ranking rewards urgency and local eligibility, flags other regions and filters expired or unrequested listings",()=>{
@@ -69,7 +71,7 @@ test("broad keyword matches do not overrate biomedical grants for a non-medical 
  assert.match(rank([{...nih,title:"Clinical Trials Not Allowed"}],demo,Date.parse(at))[0].reason,/outside your stated focus/);
 });
 test("topical listings outrank broad programs and urgent high-value unrelated grants",()=>{
- const relevant={...grant,id:"manufacturing",title:"Industrial efficiency for manufacturing",deadline:null};
+ const relevant={...grant,id:"manufacturing",title:"Support for manufacturing",deadline:null};
  const quantum={...grant,id:"qubit",title:"LPS Qubit Collaboratory (LQC)",deadline:"2026-11-26",amount:100_000_000,
   eligibility:"Small businesses are eligible for this Phase I funding program."};
  const clinical={...quantum,id:"nih",title:"NIH Small Business Technology Transfer Grant (Clinical Trial Optional)"};
@@ -87,6 +89,38 @@ test("category reservations do not add off-topic signals or grants",()=>{
  const growth={...grant,id:"news",kind:"Growth" as const,title:"New smartphone announced",signal:true};
  const matches=rank([growth,{...grant,id:"nih",title:"NIH energy software Phase I trial"},grant],demo,Date.parse(at));
  assert.deepEqual(shortlist(matches).map(m=>m.id),[grant.id]);
+});
+test("profile queries expand energy and manufacturing without sending the name or email",()=>{
+ const queries=profileQueries({...demo,email:"founder@example.com"});
+ for(const expected of ["climate tech","energy efficiency","advanced manufacturing","decarbonization","clean energy"]) assert.ok(queries.includes(expected));
+ assert.ok(queries.length<=7);
+ assert.doesNotMatch(queries.join(" "),/canopy|founder@example/);
+});
+test("catalog query respects word boundaries",()=>{
+ assert.equal(catalogMatch("NSF","Industrial products that transform the market"),false);
+ assert.equal(catalogMatch("EXIST","existing programme"),false);
+ assert.equal(catalogMatch("Horizon hydrogen","Horizon Europe clean hydrogen calls"),true);
+ assert.equal(catalogMatch("accelerator","YC accelerators"),true);
+});
+test("NIH distinguishes the next standard due date, expiration and prerequisites",()=>{
+ const [parent,phase2,trial]=parseUs({errorcode:0,data:{oppHits:[
+  {id:"1",agencyCode:"HHS-NIH11",title:"NIH SBIR for medical devices (R43/R44)",closeDate:"04/05/2027"},
+  {id:"2",agencyCode:"HHS-NIH11",title:"NIH SBIR Phase IIB for medical devices (R44)",closeDate:"04/05/2027"},
+  {id:"3",agencyCode:"HHS-NIH11",title:"NIH medical devices (R03 Clinical Trial Required)",closeDate:"03/01/2027"},
+ ]}},at);
+ assert.equal(parent.deadline,"2027-01-05");
+ assert.equal(parent.noticeExpires,"2027-04-05");
+ assert.deepEqual(phase2.prerequisites,["Requires prior NIH SBIR/STTR award"]);
+ const matches=rank([phase2,trial,parent],{...demo,sector:"Medical devices",description:"SBIR for diagnostic devices",plansClinicalTrial:false},Date.parse(at));
+ assert.equal(matches[0].id,parent.id);
+ assert.ok(matches.slice(1).every(m=>m.score<=36));
+});
+test("Innovate UK parses competition facts and links, not page boilerplate",()=>{
+ const [row]=parseInnovateUk('<a class="govuk-link" href="/competition/2624/overview/0d597772-a841-4b82-ab80-51c09cda2206">Energy Efficiency</a><dl class="date-definition-list"><dt>Opened:</dt><dd>24 November 2026</dd><dt>Closes:</dt><dd>20 January 2027</dd></dl>',at);
+ assert.equal(row.deadline,"2027-01-20");
+ assert.equal(row.status,"Open");
+ assert.equal(row.region,"UK");
+ assert.match(row.url,/service\.gov\.uk\/competition\/2624/);
 });
 test("award and contribution amounts retain currency and evidence semantics",()=>{
  const [nsf]=nsfFacts({response:{award:[{id:"7",title:"SBIR",fundsObligatedAmt:"250,000",date:"11/20/2026"}]}},at);

@@ -15,6 +15,8 @@ export const rights:Record<string,string>={
  "NSF Awards":"Official federal award facts; no contact information or abstracts displayed.",
  "CORDIS":"European Commission reuse notice; project facts only, no third-party media.",
  "UKRI GtR":"Public research-funding facts with attribution; no investigator data displayed.",
+ "Innovate UK":"From Innovate UK’s public Innovation Funding Service; factual competition metadata under the Open Government Licence, with links to original notices.",
+ "Official program links":"Curated official links and factual program summaries; check terms and availability at the source.",
  "YC batches":"Third-party public index; derived batch and count only, no company records redistributed.",
  "SEC EDGAR":"Public SEC filings; link and factual issuer name only, no individual contacts.",
 };
@@ -26,8 +28,8 @@ const money=(v:unknown)=>{
 const at=(v:unknown)=>typeof v==="number" ? new Date(v).toISOString().slice(0,10) : typeof v==="string" && Number.isFinite(Date.parse(v)) ? new Date(v).toISOString().slice(0,10) : null;
 
 export function nsfFacts(input:unknown,fetchedAt:string):Fact[]{
- const {response:{award}}=z.object({response:z.object({award:z.array(z.object({id:s.regex(/^\d+$/),title:s, fundsObligatedAmt:z.unknown(),date:z.unknown()}))})}).parse(input);
- return award.map(r=>({id:`nsf-${r.id}`,entityId:"nsf-sbir",entity:"NSF SBIR / STTR",entityType:"Program",title:r.title,kind:"Award",source:"NSF Awards",url:`https://www.nsf.gov/awardsearch/showAward?AWD_ID=${r.id}`,amount:money(r.fundsObligatedAmt),currency:"USD",observed:at(r.date),fetchedAt,rights:rights["NSF Awards"]}));
+ const {response} = z.object({response:z.object({award:z.array(z.object({id:s.regex(/^\d+$/),title:s, fundsObligatedAmt:z.unknown(),date:z.unknown()})).optional()})}).parse(input);
+ return (response.award??[]).map(r=>{const seed=/\b(?:SBIR|STTR)\b/.test(r.title);return {id:`nsf-${r.id}`,entityId:seed?"nsf-sbir":"nsf-research",entity:seed?"NSF SBIR / STTR":"NSF research awards",entityType:"Program",title:r.title,kind:"Award",source:"NSF Awards",url:`https://www.nsf.gov/awardsearch/showAward?AWD_ID=${r.id}`,amount:money(r.fundsObligatedAmt),currency:"USD",observed:at(r.date),fetchedAt,rights:rights["NSF Awards"]};});
 }
 export function cordisFacts(input:unknown,fetchedAt:string):Fact[]{
  const {hits}=z.object({hits:z.object({hit:z.array(z.object({project:z.object({id:s.regex(/^\d+$/),title:s,ecMaxContribution:z.unknown(),startDate:z.unknown()})})).optional()}).optional()}).parse(input);
@@ -69,21 +71,29 @@ export const corporate:readonly {id:string;name:string;url:string;terms:string}[
  {id:"nvidia",name:"NVIDIA Inception",url:"https://www.nvidia.com/en-us/startups/",terms:"Startup program with technical support and partner offers; not a cash grant."}
 ];
 export function corporateProgramRows(fetchedAt:string):Opportunity[]{
- return corporate.map(r=>({id:r.id,title:r.name,kind:"Growth",region:"Global",source:"Accelerator directory",url:r.url,deadline:null,amount:null,currency:"USD",eligibility:r.terms,fetchedAt,programId:r.id}));
+ return corporate.map(r=>({id:r.id,title:r.name,kind:"Perks",region:"Global",source:"Accelerator directory",url:r.url,deadline:null,amount:null,currency:"USD",eligibility:r.terms,fetchedAt,programId:r.id}));
 }
 
-export const factSources={
- "NSF Awards":async (read:Reader,t:string)=>nsfFacts(await read("https://api.nsf.gov/services/v1/awards.json?keyword=SBIR&rpp=12"),t),
- "CORDIS":async (read:Reader,t:string)=>cordisFacts(await read("https://cordis.europa.eu/search/en?"+new URLSearchParams({q:"contenttype='project' AND 'European Innovation Council'",p:"1",num:"10",format:"json"})),t),
- "UKRI GtR":async (read:Reader,t:string)=>{
-  const projects=z.object({project:z.array(z.object({id:s,title:s,links:z.object({link:z.array(z.object({rel:s,href:s}))})}))}).parse(await read("https://gtr.ukri.org/gtr/api/projects?q=innovation&s=10")).project;
+export async function searchNsf(read:Reader,t:string,keyword="SBIR"){
+ return nsfFacts(await read("https://api.nsf.gov/services/v1/awards.json?"+new URLSearchParams({keyword,rpp:keyword==="SBIR"?"12":"20"})),t);
+}
+export async function searchCordis(read:Reader,t:string,keyword="European Innovation Council"){
+ return cordisFacts(await read("https://cordis.europa.eu/search/en?"+new URLSearchParams({q:`contenttype='project' AND '${keyword}'`,p:"1",num:"10",format:"json"})),t);
+}
+export async function searchUkri(read:Reader,t:string,keyword="innovation"){
+  const projects=z.object({project:z.array(z.object({id:s,title:s,links:z.object({link:z.array(z.object({rel:s,href:s}))})})).optional()})
+   .parse(await read("https://gtr.ukri.org/gtr/api/projects?"+new URLSearchParams({q:keyword,s:"10"}))).project ?? [];
   const results=await Promise.allSettled(projects.slice(0,6).flatMap(p=>{
    const path=p.links.link.find(l=>l.rel==="FUND")?.href.match(/^https?:\/\/gtr\.ukri\.org\/gtr\/api\/funds\/([0-9A-F-]{36})$/i)?.[1];
    return path ? [read(`https://gtr.ukri.org/gtr/api/funds/${path}`).then(raw=>ukriFact(raw,p,t))] : [];
   }));
   if(results.length && results.every(r=>r.status==="rejected"))throw new Error("No UKRI detail requests succeeded");
   return results.flatMap(r=>r.status==="fulfilled"?[r.value]:[]);
- },
+}
+export const factSources={
+ "NSF Awards":searchNsf,
+ "CORDIS":searchCordis,
+ "UKRI GtR":searchUkri,
  "YC batches":async (read:Reader,t:string)=>ycFacts(await read("https://yc-oss.github.io/api/companies/all.json"),t),
  "SEC EDGAR":async (read:Reader,t:string)=>{
   const from=new Date(Date.parse(t)-30*86400000).toISOString().slice(0,10);
