@@ -71,6 +71,33 @@ test("signed cookie reuse and operator API keys use pseudonymous identifiers", a
  }
 });
 
+test("catalog API and MCP share a burst limit, aggregate counts, and prune old usage", async t=>{
+ const date=start+4*dayMs;
+ let now=date;
+ t.mock.method(Date,"now",()=>now);
+ const request=(mcp:boolean)=>new Request("https://example.com/api/catalog",{
+  headers:mcp?{"x-startfund-client":"mcp"}:{},
+ });
+ const search=()=>Promise.resolve(Response.json({ok:true}));
+ for(let i=0;i<30;i++)
+  assert.equal((await withUsage(request(i%2===0),"catalog","catalog",search)).status,200);
+ const blocked=await withUsage(request(true),"catalog","catalog",async()=>assert.fail("blocked work ran"));
+ assert.equal(blocked.status,429);
+ assert.equal(blocked.headers.get("Retry-After"),"60");
+ now+=60_000;
+ assert.equal((await withUsage(request(true),"catalog","catalog",search)).status,200);
+ const store=await db();
+ const day=date-date%dayMs;
+ assert.deepEqual((await store.all("SELECT endpoint,runs FROM usage_daily WHERE day=? ORDER BY endpoint",day)).map(r=>[r.endpoint,Number(r.runs)]),
+  [["catalog",15],["mcp:catalog",16]]);
+ now+=36*dayMs;
+ assert.equal((await withUsage(request(true),"catalog","catalog",search)).status,200);
+ for(const table of ["usage_daily","usage_network","usage_bursts","usage_totals","usage_limit_hits"]){
+  const [old]=await store.all(`SELECT count(*) AS n FROM ${table} WHERE ${table==="usage_bursts"?"minute":"day"}<=?`,date);
+  assert.equal(Number(old.n),0,table);
+ }
+});
+
 test("completed scans coalesce and persist for the same ranking inputs and actor", async t=>{
  let now=start, loads=0;
  t.mock.method(Date,"now",()=>now);

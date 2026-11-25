@@ -27,10 +27,19 @@ const schema=[
  "CREATE TABLE IF NOT EXISTS topical_cache (key TEXT PRIMARY KEY, expires INTEGER NOT NULL, data TEXT NOT NULL)",
  "CREATE TABLE IF NOT EXISTS digest_subscriptions (profile_id TEXT PRIMARY KEY, email TEXT NOT NULL, confirmation TEXT NOT NULL, expires INTEGER NOT NULL, confirmed INTEGER, unsubscribe TEXT NOT NULL, sent TEXT)",
  "CREATE TABLE IF NOT EXISTS usage_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
- "CREATE TABLE IF NOT EXISTS usage_events (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, actor TEXT NOT NULL, ip TEXT NOT NULL, action TEXT NOT NULL, endpoint TEXT NOT NULL)",
- "CREATE INDEX IF NOT EXISTS usage_by_time ON usage_events(at)",
- "CREATE INDEX IF NOT EXISTS usage_by_actor ON usage_events(actor,action,at)",
- "CREATE INDEX IF NOT EXISTS usage_by_ip ON usage_events(ip,action,at)",
+ "CREATE TABLE IF NOT EXISTS usage_daily (day INTEGER NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, endpoint TEXT NOT NULL, runs INTEGER NOT NULL, ip TEXT NOT NULL, minute INTEGER NOT NULL, plan TEXT NOT NULL, PRIMARY KEY(day,actor,action,endpoint))",
+ "CREATE TABLE IF NOT EXISTS usage_network (day INTEGER NOT NULL, ip TEXT NOT NULL, action TEXT NOT NULL, plan TEXT NOT NULL, runs INTEGER NOT NULL, PRIMARY KEY(day,ip,action,plan))",
+ "CREATE TABLE IF NOT EXISTS usage_bursts (minute INTEGER NOT NULL, ip TEXT NOT NULL, action TEXT NOT NULL, runs INTEGER NOT NULL, PRIMARY KEY(minute,ip,action))",
+ "CREATE TABLE IF NOT EXISTS usage_totals (day INTEGER PRIMARY KEY, runs INTEGER NOT NULL)",
+ ...["INSERT","UPDATE OF runs"].map((event,i)=>`CREATE TRIGGER IF NOT EXISTS usage_count_${i} AFTER ${event} ON usage_daily
+ BEGIN
+  INSERT INTO usage_bursts VALUES (NEW.minute,NEW.ip,NEW.action,1)
+   ON CONFLICT(minute,ip,action) DO UPDATE SET runs=runs+1;
+  INSERT INTO usage_network SELECT NEW.day,NEW.ip,NEW.action,NEW.plan,1 WHERE NEW.action<>'catalog'
+   ON CONFLICT(day,ip,action,plan) DO UPDATE SET runs=runs+1;
+  INSERT INTO usage_totals SELECT NEW.day,1 WHERE NEW.action<>'catalog'
+   ON CONFLICT(day) DO UPDATE SET runs=runs+1;
+ END`),
  "CREATE TABLE IF NOT EXISTS usage_limit_hits (day INTEGER NOT NULL, endpoint TEXT NOT NULL, hits INTEGER NOT NULL, PRIMARY KEY(day,endpoint))",
  "CREATE TABLE IF NOT EXISTS completed_scans (key TEXT PRIMARY KEY, expires INTEGER NOT NULL, data TEXT NOT NULL)",
  "CREATE INDEX IF NOT EXISTS completed_scans_expiry ON completed_scans(expires)",

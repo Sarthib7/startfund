@@ -20,7 +20,7 @@ Open http://localhost:3100. Requires Node.js 24+. Use `npm run dev` for developm
 
 ### Plans and usage
 
-- Free visitors get 5 scans and 3 drafts per UTC day. Catalog browsing stays unlimited. Per-network minute limits and a deployment-wide daily cap also apply to expensive requests. Set `RADAR_GLOBAL_DAILY_LIMIT` to override the default cap of 1000.
+- Free visitors get 5 scans and 3 drafts per UTC day. Catalog browsing has no daily quota; the catalog API and MCP share a short per-network burst limit. Expensive requests also share a deployment-wide daily cap. Set `RADAR_GLOBAL_DAILY_LIMIT` to override the default cap of 1000. Usage is aggregated daily and retained for about 35 days.
 - `RADAR_USAGE_SECRET` optionally sets the HMAC key for signing anonymous visitor cookies and hashing network and API-key identifiers. If unset, Startfund generates and stores one key in the database. Do not rotate it casually: rotation resets these identities. On Vercel the app uses the platform's forwarded IP; on standalone hosts without a trusted client IP, the network bucket is shared.
 - For operator-provisioned API access, set `RADAR_API_KEYS` to comma-separated high-entropy keys of at least 24 characters. Send a key as `Authorization: Bearer <key>` or set `STARTFUND_API_KEY` for the stdio MCP adapter. Provisioned keys use the Pro limits of 50 scans and 30 drafts per UTC day. This does not create a paid subscription.
 - `/admin/usage` requires `Authorization: Bearer <RADAR_ADMIN_TOKEN>` and returns 404 without valid authorization. It shows aggregate seven-day usage, not identifiers.
