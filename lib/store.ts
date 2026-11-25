@@ -91,6 +91,38 @@ export function refreshFacts(name:FactSource):Promise<string|undefined>{
 }
 type Signal={id:string;title:string;kind:string;source:string;url:string;observed:string;rights:string;postedAt?:string;fetchedAt?:string};
 const signalJson=(signal:Signal)=>JSON.stringify({...signal,searchText:" "+catalogWords(signal.title).join(" ")+" "});
+const updateTypes:Record<string,string>={
+ "Newly observed":"opportunity.new",
+ "Deadline changed":"opportunity.deadline_changed",
+ "Market signal":"market.signal",
+ "Form D pooled investment fund notice":"market.regulatory_filing",
+};
+const httpsUrl=(value:unknown)=>{
+ if(typeof value!=="string"||value.length>2048||!/^https:\/\//i.test(value)||/[\s\\]/.test(value))return null;
+ const url=URL.parse(value);
+ return url?.protocol==="https:"&&!url.username&&!url.password?value:null;
+};
+export async function agentUpdates(cursor=0,limit=50){
+ const store=await db();
+ const rows=await store.all("SELECT rowid AS cursor,source,observed,data FROM signals WHERE rowid>? ORDER BY rowid LIMIT ?",cursor,limit+1);
+ const page=rows.slice(0,limit);
+ const events=page.flatMap(row=>{
+  let value:Partial<Signal>;
+  try{value=JSON.parse(String(row.data)) as Partial<Signal>;}catch{return [];}
+  if(!value||typeof value!=="object")return [];
+  const url=httpsUrl(value.url);
+  const source=typeof value.source==="string"&&value.source?value.source:typeof row.source==="string"?row.source:null;
+  const observedAt=typeof value.observed==="string"&&value.observed?value.observed:typeof row.observed==="string"?row.observed:null;
+  if(!url||!source||!observedAt||typeof value.id!=="string"||!value.id||typeof value.title!=="string"||!value.title||typeof value.kind!=="string"||!value.kind)return [];
+  const type=Object.hasOwn(updateTypes,value.kind)?updateTypes[value.kind]:"signal.unknown";
+  return [{id:value.id,type,observedAt,source,title:value.title,url,kind:value.kind,
+   ...(typeof value.postedAt==="string"?{postedAt:value.postedAt}:{}),
+   ...(typeof value.fetchedAt==="string"?{fetchedAt:value.fetchedAt}:{}),
+   ...(typeof value.rights==="string"?{rights:value.rights}:{}),
+  }];
+ });
+ return {cursor:String(page.length?Number(page.at(-1)!.cursor):cursor),hasMore:rows.length>limit,events};
+}
 type QueryResult<T>={items:T[];warning?:string};
 const topicalCache=new Map<string,{until:number;result:Promise<QueryResult<unknown>>}>();
 const activeQueries=new Map<string,Promise<QueryResult<unknown>>>();
