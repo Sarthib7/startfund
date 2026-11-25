@@ -86,3 +86,15 @@ test("cross-feed duplicate competitions keep the direct listing and exact deadli
  const sameUrl={...find,title:"Different spelling",url:innovate.url+"/?utm_source=find"};
  assert.deepEqual(mergeOpportunities([sameUrl,innovate]).map(o=>o.id),[innovate.id]);
 });
+
+test("international UK Find a Grant listings reach UK teams when the publisher or invitation supports it",()=>{
+ const international={...sample,grantLocation:["International"]};
+ const {rows}=parseUkGovernmentGrants(html([
+  {...international,label:"aria-1",grantFunder:"Advanced Research and Invention Agency"},
+  {...international,label:"invited-1",grantShortDescription:"UK-based businesses are eligible to bid."},
+  {...international,label:"unknown-1"},
+  {...international,label:"scotland-international-1",grantFunder:"Innovate UK",grantLocation:["International","Scotland"]},
+ ]),at);
+ assert.deepEqual(rank(rows,{...demo,companyCountry:"GB"},Date.parse(at)).map(r=>r.id).sort(),["gb-find-aria-1","gb-find-invited-1"]);
+ assert.deepEqual(rank(rows,{...demo,companyCountry:"IN"},Date.parse(at)),[]);
+});

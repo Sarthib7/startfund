@@ -290,7 +290,7 @@ async function innovateUk(at:string,read:Reader) {
 const ukGrantList="https://www.find-government-grants.service.gov.uk/grants";
 const ukGrantRow=z.object({
  label:z.string().regex(/^[a-z0-9-]+$/),grantName:str,grantApplicantType:z.array(z.string()),
- grantLocation:z.array(z.string()),grantShortDescription:z.string().optional(),
+ grantLocation:z.array(z.string()),grantShortDescription:z.string().optional(),grantFunder:z.string().optional(),
  grantMaximumAward:z.unknown(),grantApplicationOpenDate:z.string().optional(),grantApplicationCloseDate:z.string().optional(),
 });
 const ukRegions:Record<string,string>={England:"GB-ENG",Scotland:"GB-SCT",Wales:"GB-WLS","Northern Ireland":"GB-NIR"};
@@ -317,16 +317,20 @@ export function parseUkGovernmentGrants(html:string,at:string) {
   if(!r?.grantApplicantType.includes("Private Sector")) return [];
   const title=cleanText(r.grantName,500);
   if(!title || /\((?:Fellowship|Bursary)\)\s*$/i.test(title)) return [];
-  const national=r.grantLocation.includes("National");
+  const description=cleanText(r.grantShortDescription,3500)??undefined;
   const subdivisions=r.grantLocation.map(area=>ukRegions[area]??(area.endsWith(" England")||area==="Midlands"?"GB-ENG":undefined))
    .filter((area):area is string=>area!==undefined);
+  const ukFunder=/\b(?:advanced research and invention agency|innovate uk|uk research and innovation|ukri|uk government|department for (?:business|science|international trade)|foreign, commonwealth and development office)\b/i.test(r.grantFunder??"");
+  const invitesUk=/\b(?:UK|United Kingdom)[ -](?:based[ -])?(?:businesses|companies|organisations|organizations|applicants)\b[^.!?]{0,60}\b(?:can|may|eligible|welcome|invited)\b/i.test(description??"");
+  const national=r.grantLocation.includes("National") ||
+   (!subdivisions.length && r.grantLocation.includes("International") && (ukFunder || invitesUk));
   if(!national && !subdivisions.length) return [];
   const opensAt=date(r.grantApplicationOpenDate), deadline=ukGrantDeadline(r.grantApplicationCloseDate);
   const closed=deadline && (deadline.includes("T")?Date.parse(deadline)<=Date.parse(at):deadline<today);
   const status=closed?"Closed":opensAt && opensAt>today?"Forthcoming":opensAt && deadline?"Open":"Program link";
   return [{id:"gb-find-"+r.label,title,kind:"Grant",region:"UK",countries:["GB"],
    ...(!national?{subdivisions:[...new Set(subdivisions)]}:{}),
-   description:cleanText(r.grantShortDescription,3500)??undefined,eligibility:"Listed for private-sector applicants; check the individual grant’s rules.",
+   description,eligibility:"Listed for private-sector applicants; check the individual grant’s rules.",
    source:"UK Find a Grant",url:ukGrantList+"/"+r.label,opensAt,deadline,status,currency:"GBP",amount:cash(r.grantMaximumAward),fetchedAt:at}];
  });
  return {rows,totalGrants};
