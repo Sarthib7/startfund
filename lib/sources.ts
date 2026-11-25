@@ -135,7 +135,7 @@ export async function enrichUs(row:Opportunity, read:Reader):Promise<Opportunity
     const dueText=synopsis.responseDateDesc?.match(/\b(?:applications?|proposals?)\s+due\s*:\s*([a-z]{3,9}\s+\d{1,2},\s+\d{4})\b/i)?.[1];
     const detailDate=usDate(synopsis.closeDate)??usDate(synopsis.responseDateStr)??usDate(synopsis.responseDate)??usDate(dueText);
     const expires=usDeadline(detailDate,today);
-    const closed=row.status==="Closed"||usClosed(ost)||(archived&&archived<=today)||(expires&&expires<today);
+    const closed=usClosed(ost)||(archived&&archived<=today)||(expires?expires<today:row.status==="Closed");
     const rolling=(detailDate&&!expires)||(!expires&&/\b(?:applications?|proposals?)\s+(?:(?:are|will be|may be)\s+)?accepted\s+(?:at any time|anytime|on a rolling basis)\b/i.test((description??"")+" "+(synopsis.responseDateDesc??"")));
     const dateFields=expires?federalTerms(row.title,row.contact?"HHS-NIH":undefined,expires,row.fetchedAt):undefined;
     return {...row,...dateFields,...(closed?{status:"Closed" as const}:rolling?{deadline:null,noticeExpires:undefined,status:"Rolling" as const}:expires?{status:"Open" as const}:{}),

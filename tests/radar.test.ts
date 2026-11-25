@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { catalogMatch, demo, profileQueries, rank, shortlist, template, type Opportunity } from "../lib/domain";
 import { digestHtml } from "../lib/digest";
-import { parseEu, parseHn, parseInnovateUk, parseUs, searchUs, sources } from "../lib/sources";
+import { enrichUs, parseEu, parseHn, parseInnovateUk, parseUs, searchUs, sources } from "../lib/sources";
 import { cordisFacts, nsfFacts, secFacts, ukriFact, ycFacts } from "../lib/facts";
 import { curatedProgramRows } from "../lib/programs";
 import { catalogOverview } from "../lib/catalog-overview";
@@ -97,6 +97,16 @@ test("US grants validate dates, URLs, and response status",()=>{
  assert.equal(grant.amount,null);
  assert.throws(()=>parseUs({errorcode:1,data:{oppHits:[]}},at));
  assert.equal(parseUs({errorcode:0,data:{oppHits:[{id:"13",title:"Grant",closeDate:"02/30/2027"}]}},at)[0].deadline,null);
+});
+test("Grants.gov reopens a stale search result when the synopsis extends the deadline",async()=>{
+ const [closed]=parseUs({errorcode:0,data:{oppHits:[{id:"13",title:"Extended grant",closeDate:"11/01/2026"}]}},at);
+ assert.equal(closed.status,"Closed");
+ const synopsis={awardCeiling:null,awardFloor:null,estimatedFunding:null,closeDate:"12/15/2026"};
+ const extended=await enrichUs(closed,async()=>({data:{ost:"POSTED",synopsis}}));
+ assert.equal(extended.status,"Open");
+ assert.equal(extended.deadline,"2026-12-15");
+ const archived=await enrichUs(closed,async()=>({data:{ost:"ARCHIVED",synopsis}}));
+ assert.equal(archived.status,"Closed");
 });
 test("EU calls keep future deadlines and exclude third-party URLs",()=>{
  const row={reference:"x",url:"https://ec.europa.eu/test",metadata:{title:["EU call"],deadlineDate:["2026-10-01","2027-04-01"],status:["31094502"]}};
