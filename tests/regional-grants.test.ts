@@ -108,6 +108,7 @@ test("curated grant fit differentiates scope, stage and sector for the same foun
  assert.ok(elevate.score>seed.score);
  assert.match(elevate.reason,/Matches your state or region.*Matches your stage/);
  assert.ok(seed.score>rank(items,{...founder,stage:"Growth"},Date.parse(at)).find(r=>r.id===seed.id)!.score);
+ assert.ok(early.find(r=>r.id==="in-birac")!.score<30);
  const biotech=rank(items,{...founder,sector:"Biotechnology",description:"Developing healthcare medical devices."},Date.parse(at));
  assert.ok(biotech.find(r=>r.id==="in-birac")!.score>early.find(r=>r.id==="in-birac")!.score);
 });

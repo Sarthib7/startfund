@@ -214,7 +214,8 @@ export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[
       const early = p.stage === "Idea" || p.stage === "Pre-seed";
       const stageFit = p.stage!=="Not sure" && (o.targetStages?.length ? o.targetStages.includes(p.stage) :
         !curated && (early ? /pre-seed|early.stage|phase i\b|accelerat/.test(text) : /scale|growth|phase ii\b/.test(text)));
-      const domainMismatch = o.kind === "Grant" && (biomedicalGrant.test(o.title)||/\bclinical trials?\b/i.test(o.title)) && !biomedical.test(profileText);
+      const medicalFocus=curated && o.focusTopics?.length && o.focusTopics.every(topic=>biomedical.test(topic));
+      const domainMismatch = o.kind === "Grant" && (medicalFocus||biomedicalGrant.test(o.title)||/\bclinical trials?\b/i.test(o.title)) && !biomedical.test(profileText);
       const fit = domainMismatch ? 4 : curated ? (broadProgram?29:17)+topicScore*9 :
         broadProgram ? 40 : topicScore===1 ? 43 : topicScore>1 ? 53 + topicScore*6 : 8;
       const days = o.deadline ? Math.max(0,(Date.parse(o.deadline)-Date.parse(day))/86400000) : Infinity;
