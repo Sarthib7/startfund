@@ -51,7 +51,7 @@ function relatedTopics(profileText: string) {
 export function profileQueries(p: Profile): string[] {
   const sector = p.sector.toLowerCase().match(/[a-z][a-z0-9-]{1,}/g)?.slice(0,4).join(" ") ?? "";
   const subject = p.sector + " " + p.description;
-  const descriptionTerms = topicWords(p.description).filter(word => word !== "software");
+  const descriptionTerms = topicWords(p.description).filter(word => !genericGrantWords.has(stem(word))).slice(0,4);
   const primary = topicGroups.flatMap(([pattern, terms]) => pattern.test(subject) ? [terms[0]] : []);
   return [...new Set([...primary, sector, ...relatedTopics(subject), ...descriptionTerms].filter(Boolean))].slice(0,7);
 }

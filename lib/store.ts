@@ -95,7 +95,18 @@ function topicalRows<T>(name:Source|FactSource,key:string,load:(read:ReturnType<
   if(cached&&cached.until>Date.now()) return cached.result as Promise<QueryResult<T>>;
   if(activeQueries.size>=36) return Promise.resolve({items:[],warning:`${name}: topical search busy`});
   const at=new Date().toISOString();
-  const result=load(auditedRead(name,at),at).then(items=>({items})).catch(()=>({items:[],warning:`${name}: topical search unavailable`}));
+  const persistentKey=createHash("sha256").update(id).digest("hex");
+  const result=(async():Promise<QueryResult<T>>=>{
+    const store=await db();
+    const stored=(await store.all("SELECT data FROM topical_cache WHERE key=? AND expires>?",persistentKey,Date.now()))[0];
+    if(stored)return {items:JSON.parse(String(stored.data)) as T[]};
+    const items=await load(auditedRead(name,at),at);
+    await store.batch([
+      {sql:"INSERT INTO topical_cache VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET expires=excluded.expires,data=excluded.data",args:[persistentKey,Date.now()+ttl,JSON.stringify(items)]},
+      {sql:"DELETE FROM topical_cache WHERE expires<=? OR key IN (SELECT key FROM topical_cache ORDER BY expires DESC,key LIMIT -1 OFFSET 256)",args:[Date.now()]},
+    ]);
+    return {items};
+  })().catch(()=>({items:[],warning:`${name}: topical search unavailable`}));
   activeQueries.set(id,result);
   void result.then(value=>{
     activeQueries.delete(id);
@@ -157,7 +168,8 @@ export async function radar(p: Profile):Promise<Radar>{
     Promise.all((Object.keys(sources) as Source[]).filter(name=>name!=="Hacker News").map(sourceRows)),
     Promise.all(terms.map(queriedUs)),Promise.all(terms.map(queriedEu)),Promise.all(historical),
   ]);
-  const usRows=mergeOpportunities(us.flatMap(result=>result.items.filter(o=>!o.prerequisites?.length && !/clinical trials?|\bNIH\b/i.test(o.title)).slice(0,5)));
+  const detailed=new Set(general.flatMap(result=>result.items.filter(o=>o.source==="Grants.gov"&&(o.description||o.eligibility)).map(o=>o.id)));
+  const usRows=mergeOpportunities(us.flatMap(result=>result.items.filter(o=>!detailed.has(o.id)&&!o.prerequisites?.length && !/clinical trials?|\bNIH\b/i.test(o.title)).slice(0,5)));
   const enrich=await Promise.all(usRows.slice(0,12).map(row=>topicalRows("Grants.gov",row.id,async read=>[await enrichUs(row,read)])));
   const all=mergeOpportunities([...general,...us,...eu,...enrich].flatMap(x=>x.items));
   const warnings=[...new Set([...general,...us,...eu,...facts].flatMap(r=>r.warning?[r.warning]:[]))];
