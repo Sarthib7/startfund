@@ -2,7 +2,8 @@ import { Client } from "eve/client";
 import { cookies } from "next/headers";
 import { z } from "zod";
 import { demo, template, type Match, type Profile } from "../../../lib/domain";
-import { radar, saved } from "../../../lib/store";
+import { completedRadar, saved } from "../../../lib/store";
+import { withUsage } from "../../../lib/usage";
 const schema=z.object({why:z.string().min(1).max(700),subject:z.string().min(1).max(160),body:z.string().min(1).max(2000)});
 type Draft=z.infer<typeof schema>&{mode:string};
 const memo=new Map<string,{expires:number;draft:Draft}>();
@@ -45,12 +46,13 @@ export async function POST(request:Request){
  if(request.headers.get("sec-fetch-site")==="cross-site" || !request.headers.get("content-type")?.startsWith("application/json")) return Response.json({error:"Invalid request"},{status:403});
  const input=z.object({id:z.string().min(1).max(160)}).safeParse(await request.json().catch(()=>null));
  if(!input.success) return Response.json({error:"Invalid listing"},{status:400});
- const id=(await cookies()).get("startfund-profile")?.value;
- const record=id ? await saved(id) : null;
- const profile=record?.profile ?? demo;
- const snapshot=record?.digest?.evidence ? record.digest : await radar(profile);
- const match=snapshot.matches.find(m=>m.id===input.data.id);
- if(!match) return Response.json({error:"Listing not found. Scan again."},{status:404});
- const clientId=record && id ? process.env.VERCEL==="1" ? request.headers.get("x-vercel-forwarded-for") ?? id : id : null;
- return Response.json(await generate(profile,match,clientId));
+ return withUsage(request,"draft","draft",async identity=>{
+  const id=(await cookies()).get("startfund-profile")?.value;
+  const record=id ? await saved(id) : null;
+  const profile=record?.profile ?? demo;
+  const snapshot=record?.digest?.evidence ? record.digest : await completedRadar(profile,record?identity.actor:"demo");
+  const match=snapshot.matches.find(m=>m.id===input.data.id);
+  if(!match) return Response.json({error:"Listing not found. Scan again."},{status:404});
+  return Response.json(await generate(profile,match,record?identity.actor:null));
+ });
 }

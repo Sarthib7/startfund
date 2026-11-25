@@ -1,3 +1,11 @@
+.plan-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.plan-card{padding:clamp(18px,4vw,36px)}
+.plan-pro{border-color:#6e9a82;background:#f4f8f2}
+.plan-price{font-size:clamp(32px,5vw,52px);font-weight:700;letter-spacing:-.05em;margin:16px 0}
+.plan-price small{font-size:14px;font-weight:500;letter-spacing:0}
+.plan-card li{margin-block:8px}
+.pricing-link{display:inline-flex;align-items:center;min-height:44px}
+@media(max-width:600px){.plan-grid{grid-template-columns:minmax(0,1fr)}}
 .workspace.single{grid-template-columns:minmax(0,1fr)}
 .catalog-hero{display:flex;justify-content:space-between;align-items:center;gap:20px}
 .catalog-radar{width:clamp(84px,23vw,208px);flex:none;color:#4e8068}

@@ -1,3 +1,5 @@
+import { outbound } from "./outbound";
+
 export type Reader = (url:string, init?:RequestInit)=>Promise<unknown>;
 export type Snapshot = { url:string; body:string; etag:string|null; modified:string|null };
 export function reader(options:{contact?:string; lookUp?:(url:string)=>Snapshot|undefined|Promise<Snapshot|undefined>; capture?:(s:Snapshot)=>void|Promise<void>}={}):Reader{
@@ -9,10 +11,14 @@ export function reader(options:{contact?:string; lookUp?:(url:string)=>Snapshot|
   const previous=(!init?.method || init.method==="GET") ? await options.lookUp?.(url) : undefined;
   if(previous?.etag) headers.set("if-none-match",previous.etag);
   if(previous?.modified) headers.set("if-modified-since",previous.modified);
-  const r=await fetch(url,{...init,headers,signal:AbortSignal.timeout(8000),cache:"no-store"});
-  if(r.status===304 && previous) return text ? previous.body : JSON.parse(previous.body);
-  if(!r.ok) throw new Error(`Source HTTP ${r.status}`);
-  const original=await r.text();
+  const {r,original}=await outbound(async()=>{
+   const r=await fetch(url,{...init,headers,signal:AbortSignal.timeout(8000),cache:"no-store"});
+   if(r.status===304 && previous)return {r,original:null};
+   if(!r.ok){await r.body?.cancel();throw new Error(`Source HTTP ${r.status}`);}
+   return {r,original:await r.text()};
+  });
+  if(original===null&&previous)return text ? previous.body : JSON.parse(previous.body);
+  if(original===null)throw new Error("Source returned an empty cache response");
   const parsed=text ? original : JSON.parse(original);
   let body=original;
   if(new URL(url).hostname==="api.grants.gov" && typeof parsed==="object" && parsed?.token){

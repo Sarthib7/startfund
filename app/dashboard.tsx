@@ -5,6 +5,11 @@ import { kinds, listingStatus, opportunityLocation, regions, selectProfileRegion
 import { digestHtml } from "../lib/digest";
 
 type Draft={why:string;subject:string;body:string;mode:string};
+class UsageLimitError extends Error {}
+function requestError(res:Response,data:{error?:string;pricing?:string},fallback:string){
+ const message=data.error??fallback;
+ return res.status===429 ? new UsageLimitError(message+(data.pricing?" Pro is coming soon.":"")) : new Error(message);
+}
 const names={Grant:"Grants",Tender:"Tenders",Accelerator:"Accelerators",VC:"Investors",Perks:"Free builder bundle",Growth:"Growth"} as const;
 const formatDate=(value:string)=>new Intl.DateTimeFormat("en",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"}).format(new Date(value));
 const money=(value:number,m:Match)=>new Intl.NumberFormat("en",{style:"currency",currency:m.currency,maximumFractionDigits:0}).format(value);
@@ -44,7 +49,7 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
   if(!selected)return;
   const controller=new AbortController();
   fetch("/api/draft",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({id:selected.id}),signal:controller.signal})
-   .then(async r=>{const data=await r.json();if(!r.ok)throw new Error(data.error);if(!controller.signal.aborted)setDraft(data);})
+   .then(async r=>{const data=await r.json();if(!r.ok)throw requestError(r,data,"Draft unavailable.");if(!controller.signal.aborted)setDraft(data);})
    .catch(e=>{if(!controller.signal.aborted)setDraftError(e.message||"Draft unavailable.");});
   return ()=>controller.abort();
  },[selected]);
@@ -53,7 +58,7 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
   try{
    const input={...(profile.regionExplicit?profile:automaticProfile),developerCountries:teamCountries.split(/[\s,]+/).filter(Boolean),developerSubdivisions:teamSubdivisions.split(/[\s,]+/).filter(Boolean)};
    const res=await fetch("/api/radar",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(input)});
-   const data=await res.json();if(!res.ok)throw new Error(data.error);
+   const data=await res.json();if(!res.ok)throw requestError(res,data,"Scan unavailable.");
    setSaved(input);setRadar(data);setFilter("All");setBundle(null);setSelected(null);setSample(false);setConfirmation(false);setEdit(false);
    requestAnimationFrame(()=>scrollTo(resultsRef.current));
   }catch(e){setError(e instanceof Error?e.message:"Scan unavailable.");}
@@ -74,13 +79,15 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
      (!sample&&/^(?:perks|credits|builder bundle|free builder bundle|free apis?)$/i.test(question)))){
     const {email:_email,...bundleProfile}=saved;
     const res=await fetch("/api/assistant",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"builder_bundle",profile:bundleProfile})});
-    if(!res.ok)throw new Error("Builder bundle unavailable.");
-    setBundle(await res.json());setFilter("Perks");
+    const data=await res.json();
+    if(!res.ok)throw requestError(res,data,"Builder bundle unavailable.");
+    setBundle(data);setFilter("Perks");
     requestAnimationFrame(()=>scrollTo(resultsRef.current));
     answer="I opened the Free builder bundle. Each item links to the provider’s current terms.";
    }else if(question.includes(".")&&!/\s/.test(question)){
     const res=await fetch("/api/assistant",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"analyze_company",company:question})});
     const reply=await res.json();
+    if(res.status===429)throw requestError(res,reply,"Company lookup unavailable.");
     if(reply.profile){
      setProfile(reply.profile);setTeamCountries("");setTeamSubdivisions("");setConfirmation(true);setEdit(!reply.profile.sector||!reply.profile.description);
      answer="I found these details on the company website. Review them before scanning.";
@@ -89,7 +96,7 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
     setProfile({...initialClean(profile),name:question.slice(0,80)});setTeamCountries("");setTeamSubdivisions("");setEdit(true);setConfirmation(false);
     answer="Share the company’s website so I can read it, or enter a short description and sector below.";
    }
-  }catch{answer="I couldn’t complete that request. Try again or enter your company details.";}
+  }catch(e){answer=e instanceof UsageLimitError?e.message:"I couldn’t complete that request. Try again or enter your company details.";}
   finally{setTurns(previous=>[...previous.slice(-4),{question,answer}]);setLooking(false);}
  }
  async function digestAction(action:"subscribe"|"unsubscribe"){
@@ -180,6 +187,6 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
      <div className="intake-actions"><button className="secondary" onClick={copyDraft}>Copy</button><a className="secondary" href={`mailto:${selected.contact??""}?subject=${encodeURIComponent(draft.subject)}&body=${encodeURIComponent(draft.body)}`}>Open in mail ↗</a><span aria-live="polite">{copy}</span></div>
     </>}
    </section></div>}
-  </main><footer>STARTFUND <span>·</span> Built with eve <span>·</span> Fit is a heuristic, not an eligibility decision.</footer>
+  </main><footer>STARTFUND <span>·</span> <Link className="secondary nav-link pricing-link" href="/pricing">Pricing ↗</Link> <span>·</span> Fit is a heuristic, not an eligibility decision.</footer>
  </div>;
 }

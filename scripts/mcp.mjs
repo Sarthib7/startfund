@@ -14,6 +14,7 @@ const specs=[spec,
 ];
 const version="2025-11-25";
 const supported=new Set([version,"2025-06-18","2025-03-26","2024-11-05"]);
+let visitorCookie;
 const reply=(id,value)=>process.stdout.write(JSON.stringify({jsonrpc:"2.0",id,...value})+"\n");
 async function respond(m){
  if(typeof m?.method!=="string"||m.jsonrpc!=="2.0")return reply(m?.id??null,{error:{code:-32600,message:"Invalid request"}});
@@ -33,9 +34,17 @@ async function respond(m){
    const target=new URL(catalog?"/api/catalog":"/api/assistant",url);
    if(catalog)for(const k of ["q","source","limit"])if(args[k]!==undefined)target.searchParams.set(k,String(args[k]));
    try{
-    const r=await fetch(target,{signal:AbortSignal.timeout(30000),
-     ...(catalog?{}:{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({...args,action:name})})});
-    if(!r.ok)throw new Error(`Startfund HTTP ${r.status}`);
+    const headers={"x-startfund-client":"mcp"};
+    if(process.env.STARTFUND_API_KEY)headers.authorization=`Bearer ${process.env.STARTFUND_API_KEY}`;
+    if(visitorCookie)headers.cookie=visitorCookie;
+    if(!catalog)headers["content-type"]="application/json";
+    const r=await fetch(target,{signal:AbortSignal.timeout(30000),headers,
+     ...(catalog?{}:{method:"POST",body:JSON.stringify({...args,action:name})})});
+    visitorCookie=r.headers.getSetCookie().find(value=>value.startsWith("startfund-visitor="))?.split(";")[0]??visitorCookie;
+    if(!r.ok){
+     const body=await r.json().catch(()=>null);
+     throw new Error(body?.error??`Startfund HTTP ${r.status}`);
+    }
     return result({content:[{type:"text",text:JSON.stringify(await r.json())}]});
    }catch(e){return result({isError:true,content:[{type:"text",text:String(e.message)}]});}
   }
