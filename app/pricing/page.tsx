@@ -1,7 +1,10 @@
 import Link from "next/link";
+import {billingConfig} from "../../lib/billing-state";
 import {plans,proPrice} from "../../lib/plans";
+import {BillingControls} from "./billing-controls";
 
 export const metadata={title:"Pricing — Startfund"};
+export const dynamic="force-dynamic";
 
 export default function Pricing(){
  return <div className="shell">
@@ -14,7 +17,7 @@ export default function Pricing(){
     </ul><Link href="/" className="secondary nav-link pricing-link">Open funding radar ↗</Link></section>
     <section className="panel detail plan-card plan-pro"><div className="section-kicker">02 / PRO</div><h2>Pro</h2><p className="plan-price">${proPrice} <small>/ month</small></p><ul>
      <li>{plans.Pro.scan} scans and {plans.Pro.draft} drafts per day</li><li>Weekly funding digest</li><li>MCP and API keys</li><li>Saved profiles</li>
-    </ul><p className="badge">Coming soon</p><p className="muted">No payment or sign-up yet.</p></section>
+    </ul>{billingConfig()?<BillingControls/>:<><p className="badge">Coming soon</p><p className="muted">No payment or sign-up yet.</p></>}</section>
    </div>
   </main>
  </div>;

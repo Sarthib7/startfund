@@ -1,11 +1,12 @@
 import {createHash,createHmac,randomBytes,randomUUID,timingSafeEqual} from "node:crypto";
 import {isIP} from "node:net";
+import {billingAccount,billingConfig,visitorForProKey} from "./billing-state";
 import {db} from "./database";
 import {plans} from "./plans";
 
 export const dayMs=86_400_000;
 const burstMs=60_000;
-const burst={scan:3,draft:5,lookup:4,assistant:8,agent:8,catalog:30,share:3,submission:2} as const;
+const burst={scan:3,draft:5,lookup:4,assistant:8,agent:8,catalog:30,share:3,submission:2,checkout:3} as const;
 const visitorCookie="startfund-visitor";
 type Action=keyof typeof burst;
 type Identity={actor:string;ip:string;plan:keyof typeof plans;cookie?:string};
@@ -25,19 +26,37 @@ function usageSecret(){
  })().catch(e=>{signingKey=undefined;throw e;});
 }
 const bearer=(request:Request)=>request.headers.get("authorization")?.match(/^Bearer ([^\s]+)$/i)?.[1];
+function signedVisitorCookie(request:Request,id:string,secret:string){
+ const secure=new URL(request.url).protocol==="https:"?"; Secure":"";
+ return `${visitorCookie}=${id}.${mac(secret,"visitor:"+id)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=7776000${secure}`;
+}
+export async function restoreVisitorCookie(request:Request,id:string){
+ return signedVisitorCookie(request,id,await usageSecret());
+}
+async function readVisitor(request:Request,secret:string){
+ const value=request.headers.get("cookie")?.match(/(?:^|;\s*)startfund-visitor=([a-f0-9-]{36})\.([\w-]{43})(?:;|$)/);
+ if(value&&sameSecret(value[2],mac(secret,"visitor:"+value[1])))return {id:value[1]};
+ const id=randomUUID();
+ return {id,cookie:signedVisitorCookie(request,id,secret)};
+}
+export async function browserVisitor(request:Request){
+ return readVisitor(request,await usageSecret());
+}
 export async function usageIdentity(request:Request,serviceKey?:string):Promise<Identity|null>{
  const supplied=bearer(request);
- if(supplied&&!process.env.RADAR_API_KEYS?.split(",").map(key=>key.trim()).some(key=>key.length>=24&&sameSecret(key,supplied)))return null;
+ const configured=supplied&&process.env.RADAR_API_KEYS?.split(",").map(key=>key.trim()).some(key=>key.length>=24&&sameSecret(key,supplied));
+ const stripeEnabled=Boolean(billingConfig());
+ const paidVisitor=supplied&&!configured&&stripeEnabled?await visitorForProKey(supplied):null;
+ if(supplied&&!configured&&!paidVisitor)return null;
  const secret=await usageSecret();
- const key=serviceKey??supplied;
  const forwarded=process.env.VERCEL==="1"?request.headers.get("x-vercel-forwarded-for")?.split(",")[0].trim():undefined;
  const ip=mac(secret,"ip:"+(forwarded&&isIP(forwarded)?forwarded:"unavailable"));
+ if(paidVisitor&&!serviceKey)return {actor:"visitor:"+paidVisitor,ip,plan:"Pro"};
+ const key=serviceKey??supplied;
  if(key)return {actor:"key:"+mac(secret,"key:"+key),ip,plan:"Pro"};
- const value=request.headers.get("cookie")?.match(/(?:^|;\s*)startfund-visitor=([a-f0-9-]{36})\.([\w-]{43})(?:;|$)/);
- if(value&&sameSecret(value[2],mac(secret,"visitor:"+value[1])))return {actor:"visitor:"+value[1],ip,plan:"Free"};
- const id=randomUUID();
- const secure=new URL(request.url).protocol==="https:"?"; Secure":"";
- return {actor:"visitor:"+id,ip,plan:"Free",cookie:`${visitorCookie}=${id}.${mac(secret,"visitor:"+id)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=7776000${secure}`};
+ const {id,cookie}=await readVisitor(request,secret);
+ const pro=stripeEnabled&&!cookie&&(await billingAccount(id))?.pro;
+ return {actor:"visitor:"+id,ip,plan:pro?"Pro":"Free",...(cookie?{cookie}:{})};
 }
 
 function globalCap(){
@@ -45,7 +64,7 @@ function globalCap(){
  return Number.isSafeInteger(n)&&n>0?n:1000;
 }
 const firstOfDay=(now:number)=>Math.floor(now/dayMs)*dayMs;
-const actionNames={scan:"scans",draft:"drafts",lookup:"company lookups",assistant:"assistant requests",agent:"agent requests",catalog:"catalog requests",share:"share links",submission:"submissions"};
+const actionNames={scan:"scans",draft:"drafts",lookup:"company lookups",assistant:"assistant requests",agent:"agent requests",catalog:"catalog requests",share:"share links",submission:"submissions",checkout:"checkout attempts"};
 let pruning:{day:number;task:Promise<void>}|undefined;
 function pruneUsage(day:number,store:Awaited<ReturnType<typeof db>>){
  if(pruning&&pruning.day>=day)return pruning.task;
