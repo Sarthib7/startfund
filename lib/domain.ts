@@ -78,7 +78,9 @@ function grantTerms(o:Opportunity,p:Profile,profileText:string,words:Map<string,
   const fintechHit=fintech.test(profileText) ? scope.match(fintech)?.[0] : undefined;
   const sectorHits=topicHits(scope,sector,[]).overlap;
   const biomedicalHits=biomedical.test(profileText) ? [...(o.title.match(biomedicalGrant)??[]).slice(0,1),...(scope.match(biomedical)??[]).slice(0,1)] : [];
+  const descriptions=scopeHits.overlap.filter(term=>!genericGrantWords.has(stem(term)) && !/^(?:sbir|sttr)$/i.test(term));
   const qualifying=[...sectorHits,...scopeHits.related,...scopeHits.overlap.filter(term=>grantTopic.test(term)),
+    ...(descriptions.length>=2?descriptions:[]),
     ...(fintechHit?[fintechHit]:[]),...biomedicalHits].map(term=>term.toLowerCase());
   if(!qualifying.length) return [];
   const terms=[...qualifying,...scopeHits.overlap.filter(term=>!genericGrantWords.has(stem(term)))];
