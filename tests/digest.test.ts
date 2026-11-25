@@ -1,0 +1,38 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { demo } from "../lib/domain";
+import { confirmSubscription, digestSubscription, requestSubscription, save, saved, subscriptions, unsubscribeDigest, updateDigest } from "../lib/store";
+import { weekly } from "../lib/weekly";
+
+test("saving an allowlisted email and requesting confirmation do not enable weekly delivery",async t=>{
+ process.env.RADAR_DB_PATH=":memory:";
+ process.env.RESEND_API_KEY="fake-test-key";
+ process.env.RADAR_EMAIL_FROM="radar@example.com";
+ process.env.RADAR_ALLOWED_RECIPIENT="founder@example.com";
+ process.env.RADAR_PUBLIC_ORIGIN="https://example.com";
+ const fetchMock=t.mock.method(globalThis,"fetch",()=>{throw new Error("Unexpected delivery or source traffic");});
+ const id="scan",email="founder@example.com",confirm="a".repeat(64),unsubscribe="b".repeat(64);
+ await save(id,{...demo,email},{matches:[],warnings:[],scannedAt:"2026-11-25T12:00:00Z"});
+ assert.equal(await digestSubscription(id),"off");
+ await weekly();
+ assert.equal(fetchMock.mock.callCount(),0);
+ assert.equal(await requestSubscription(id,email,confirm,unsubscribe),true);
+ assert.equal(await digestSubscription(id),"pending");
+ await weekly();
+ assert.equal(fetchMock.mock.callCount(),0);
+ assert.equal(await confirmSubscription("c".repeat(64)),false);
+ assert.equal(await confirmSubscription(confirm),true);
+ assert.equal(await confirmSubscription(confirm),false);
+ assert.equal(await digestSubscription(id),"subscribed");
+ const [{version}]=await subscriptions();
+ const oldDate=Date.now()+1000;
+ const now=t.mock.method(Date,"now",()=>oldDate);
+ const fresh={matches:[],warnings:[],scannedAt:"2026-11-26T12:00:00Z"};
+ await save(id,{...demo,email,sector:"Updated sector"},fresh);
+ now.mock.restore();
+ assert.equal(await updateDigest(id,{...fresh,scannedAt:"2026-11-25T12:00:00Z"},version),false);
+ assert.deepEqual((await saved(id))?.digest,fresh);
+ assert.equal(await unsubscribeDigest(unsubscribe),true);
+ await weekly();
+ assert.equal(fetchMock.mock.callCount(),0);
+});
