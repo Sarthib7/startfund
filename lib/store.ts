@@ -96,24 +96,27 @@ function topicalRows<T>(name:Source|FactSource,key:string,load:(read:ReturnType<
   if(activeQueries.size>=36) return Promise.resolve({items:[],warning:`${name}: topical search busy`});
   const at=new Date().toISOString();
   const persistentKey=createHash("sha256").update(id).digest("hex");
-  const result=(async():Promise<QueryResult<T>>=>{
+  const result=(async():Promise<{value:QueryResult<T>;until:number}>=>{
     const store=await db();
-    const stored=(await store.all("SELECT data FROM topical_cache WHERE key=? AND expires>?",persistentKey,Date.now()))[0];
-    if(stored)return {items:JSON.parse(String(stored.data)) as T[]};
+    const stored=(await store.all("SELECT data,expires FROM topical_cache WHERE key=? AND expires>?",persistentKey,Date.now()))[0];
+    if(stored&&Number(stored.expires)>Date.now())return {value:{items:JSON.parse(String(stored.data)) as T[]},until:Number(stored.expires)};
     const items=await load(auditedRead(name,at),at);
+    const until=Date.now()+ttl;
     await store.batch([
-      {sql:"INSERT INTO topical_cache VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET expires=excluded.expires,data=excluded.data",args:[persistentKey,Date.now()+ttl,JSON.stringify(items)]},
+      {sql:"INSERT INTO topical_cache VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET expires=excluded.expires,data=excluded.data",args:[persistentKey,until,JSON.stringify(items)]},
       {sql:"DELETE FROM topical_cache WHERE expires<=? OR key IN (SELECT key FROM topical_cache ORDER BY expires DESC,key LIMIT -1 OFFSET 256)",args:[Date.now()]},
     ]);
-    return {items};
-  })().catch(()=>({items:[],warning:`${name}: topical search unavailable`}));
-  activeQueries.set(id,result);
-  void result.then(value=>{
+    return {value:{items},until};
+  })().catch(()=>({value:{items:[],warning:`${name}: topical search unavailable`},until:Date.now()+60_000})).then(({value,until})=>{
     activeQueries.delete(id);
     topicalCache.delete(id);
-    if(topicalCache.size>=128) topicalCache.delete(topicalCache.keys().next().value!);
-    topicalCache.set(id,{until:Date.now()+(("warning" in value) ? 60_000 : ttl),result});
+    if(until>Date.now()){
+      if(topicalCache.size>=128) topicalCache.delete(topicalCache.keys().next().value!);
+      topicalCache.set(id,{until,result:Promise.resolve(value)});
+    }
+    return value;
   });
+  activeQueries.set(id,result);
   return result;
 }
 function mergeOpportunities(rows:Opportunity[]) {
