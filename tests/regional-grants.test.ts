@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { demo, listingStatus, opportunityLocation, profileSchema, rank, shortlist, type Opportunity } from "../lib/domain";
+import { demo, listingStatus, opportunityLocation, profileSchema, rank, selectProfileRegion, shortlist, type Opportunity } from "../lib/domain";
 import { parseUkGovernmentGrants, sources } from "../lib/sources";
 import { mergeOpportunities } from "../lib/store";
 
@@ -121,6 +121,18 @@ test("automatic region follows company country without replacing explicit or leg
  assert.equal(profileSchema.parse({...demo,companyCountry:"FR",regionExplicit:true}).region,"US");
  assert.equal(profileSchema.parse({...demo,region:"UK"}).region,"UK");
  assert.equal(profileSchema.parse({...demo,regionExplicit:false,companySubdivision:"IN-KA"}).region,"Other");
+});
+
+test("switching back to Automatic restores the company region inferred without a country code",()=>{
+ const inferred={...demo,region:"DE",regionExplicit:false} as const;
+ const manual=selectProfileRegion(selectProfileRegion(inferred,"US"),"UK");
+ const saved=profileSchema.parse(JSON.parse(JSON.stringify(manual)));
+ assert.equal(saved.region,"UK");
+ const automatic=profileSchema.parse(selectProfileRegion(saved));
+ assert.equal(automatic.region,"DE");
+ assert.equal(automatic.regionExplicit,false);
+ assert.equal(selectProfileRegion({...saved,companyCountry:"FR"}).region,"EU");
+ assert.equal(selectProfileRegion({...saved,inferredRegion:undefined}).region,"Other");
 });
 
 test("the shortlist reserves two slots for matched national and regional grants among higher-ranked EU calls",async()=>{
