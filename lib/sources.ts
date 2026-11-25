@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { decodeHTML } from "entities";
 import type { Opportunity } from "./domain";
 import { corporateProgramRows } from "./facts";
 import { curatedProgramRows } from "./programs";
@@ -16,12 +17,12 @@ const cash = (v: unknown) => {
 function safeUrl(v: string) {
   try { const u = new URL(v); return u.protocol === "https:" || u.protocol === "http:" ? u.href : null; } catch { return null; }
 }
-const usRow = z.object({id: z.string().regex(/^\d+$/), title: str, agencyCode:z.string().optional(),closeDate: z.string().optional(), oppStatus:z.string().optional()});
+const usRow = z.object({id: z.string().regex(/^\d+$/), title: str, agencyCode:z.string().optional(),closeDate: z.string().nullish(),postDate:z.string().nullish(),oppStatus:z.string().optional()});
 const detailsSchema = z.object({data:z.object({synopsis:z.object({
   awardCeiling:z.unknown(),awardFloor:z.unknown(),estimatedFunding:z.unknown(), applicantEligibilityDesc:z.string().nullish(), synopsisDesc:z.string().nullish(),
 })})});
 export function cleanText(value:string|null|undefined, limit:number) {
-  const text=value?.replace(/<[^>]*>/g," ").replace(/&nbsp;|&#160;/g," ").replace(/&amp;/g,"&").replace(/&#x27;|&#39;|&apos;/g,"'").replace(/\s+/g," ").trim();
+  const text=value && decodeHTML(value.replace(/<[^>]*>/g," ")).replace(/\s+/g," ").trim();
   return !text ? null : text.length<=limit ? text : text.slice(0,limit+1).replace(/\s+\S*$/,"")+"…";
 }
 const nihCalendar="https://grants.nih.gov/grants-process/submit/submission-policies/standard-due-dates";
@@ -39,7 +40,7 @@ function federalTerms(title:string,agency:string|undefined,expires:string|null,f
   const nih=/^HHS-NIH/.test(agency??"") || /\b(?:NIH|NIDCR|NICHD|NHLBI)\b/i.test(title);
   const parent=nih && /\b(?:R41|R42|R43|R44|SB1)\b/i.test(title);
   const prior=nih && /\b(?:CRP|commercialization readiness pilot|phase iib|phase ii[- ]only)\b/i.test(title);
-  const trial=/\bclinical trials? required\b/i.test(title);
+  const trial=/\b(?:clinical trials?|CT)\s*(?:[-:–]\s*)?required\b/i.test(title);
   const next=parent ? nextNihDue(fetchedAt.slice(0,10),expires) : null;
   return {deadline:next??expires,...(next ? {noticeExpires:expires??undefined,deadlineNote:"Standard NIH due date; verify the exact cycle in the NOFO.",applicationGuide:nihCalendar} :
     {applicationGuide:"https://www.grants.gov/applicants/apply-for-grants"}),
@@ -50,8 +51,15 @@ export function parseUs(raw: unknown, fetchedAt: string): Opportunity[] {
   const items = z.object({errorcode: z.literal(0), data:z.object({oppHits:z.array(z.unknown())})}).parse(raw);
   return items.data.oppHits.flatMap(rawRow => {
     const {data:r} = usRow.safeParse(rawRow);
-    return r && (!r.oppStatus || r.oppStatus === "posted") && !/^(?:rfi\b|request for information\b|noi\b|notice of intent\b)/i.test(r.title)
-      ? [{id:`us-${r.id}`, title:cleanText(r.title,600)??r.title, kind:"Grant", region:"US", source:"Grants.gov", url:`https://www.grants.gov/search-results-detail/${r.id}`, ...federalTerms(r.title,r.agencyCode,date(r.closeDate),fetchedAt), status:"Open", amount:null,currency:"USD",eligibility:null,fetchedAt}] : [];
+    if(!r || (r.oppStatus && r.oppStatus!=="posted") || /^(?:rfi\b|request for information\b|noi\b|notice of intent\b)/i.test(r.title))return [];
+    const title=cleanText(r.title,600)??r.title, today=fetchedAt.slice(0,10), postedAt=date(r.postDate??undefined)??undefined;
+    const closes=date(r.closeDate??undefined), cutoff=new Date(fetchedAt);
+    cutoff.setUTCFullYear(cutoff.getUTCFullYear()-2);
+    const rolling=Boolean(closes&&Number(closes.slice(0,4))>Number(today.slice(0,4))+10) || /accepted (?:at any time|anytime)|rolling/i.test(r.closeDate??"");
+    const deadline=rolling?null:closes;
+    const status=(deadline&&deadline<today)||(!deadline&&postedAt&&Date.parse(postedAt)<cutoff.getTime())?"Closed":rolling?"Rolling":"Open";
+    return [{id:`us-${r.id}`,title,kind:"Grant",region:"US",source:"Grants.gov",url:`https://www.grants.gov/search-results-detail/${r.id}`,
+      ...federalTerms(title,r.agencyCode,deadline,fetchedAt),status,postedAt,amount:null,currency:"USD",eligibility:null,fetchedAt}];
   });
 }
 const euRow = z.object({reference:str,url:str,metadata:z.object({
@@ -106,9 +114,11 @@ export async function enrichUs(row:Opportunity, read:Reader):Promise<Opportunity
     const {data:{synopsis}}=detailsSchema.parse(await post(read,"https://api.grants.gov/v1/api/fetchOpportunity",{opportunityId:Number(row.id.slice(3))}));
     const eligibility=cleanText(synopsis.applicantEligibilityDesc,2400);
     const prior=row.contact && eligibility && /\b(?:previously received|prior (?:phase|award)|phase i awardee)\b/i.test(eligibility);
-    return {...row,amount:cash(synopsis.awardCeiling),awardFloor:cash(synopsis.awardFloor),programFunding:cash(synopsis.estimatedFunding),eligibility,
+    const description=cleanText(synopsis.synopsisDesc,4500)??undefined;
+    const rolling=row.status!=="Closed" && /\b(?:applications?|proposals?)\s+(?:(?:are|will be|may be)\s+)?accepted\s+(?:at any time|anytime|on a rolling basis)\b/i.test(description??"");
+    return {...row,...(rolling?{deadline:null,status:"Rolling" as const}:{}),amount:cash(synopsis.awardCeiling),awardFloor:cash(synopsis.awardFloor),programFunding:cash(synopsis.estimatedFunding),eligibility,
       prerequisites:[...new Set([...(row.prerequisites??[]),...(prior ? ["Requires prior NIH SBIR/STTR award"]:[])])],
-      description:cleanText(synopsis.synopsisDesc,4500) ?? undefined};
+      description};
   } catch {return row;}
 }
 export async function searchEu(at:string,read:Reader,keyword?:string) {

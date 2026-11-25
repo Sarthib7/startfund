@@ -5,9 +5,54 @@ import { digestHtml } from "../lib/digest";
 import { parseEu, parseHn, parseInnovateUk, parseUs, sources } from "../lib/sources";
 import { cordisFacts, nsfFacts, secFacts, ukriFact, ycFacts } from "../lib/facts";
 import { curatedProgramRows } from "../lib/programs";
+import { catalogOverview } from "../lib/catalog-overview";
 
 const at="2026-11-25T12:00:00Z";
 const [grant]=parseUs({errorcode:0,data:{oppHits:[{id:"12",title:"Energy software Phase I",closeDate:"12/02/2026"}]}},at);
+test("catalog analytics only count and link the displayed cohort",()=>{
+ const data=catalogOverview([
+  {...grant,id:"open",amount:15000},
+  {...grant,id:"closed",deadline:"2026-11-24",amount:20000},
+  {...grant,id:"rolling",status:"Rolling",deadline:null},
+  {...grant,id:"future",status:"Forthcoming",opensAt:"2026-12-01"},
+ ],"2026-11-25");
+ assert.equal(data.total,4);
+ assert.equal(data.open,2);
+ assert.equal(data.withAmount,1);
+ assert.deepEqual(data.byType,[{label:"Grant",count:4}]);
+ assert.deepEqual(data.deadlines.map(row=>row.id),["open"]);
+});
+test("grant evidence matches core sectors, not disbursements, clinical labels or generic words",()=>{
+ const candidate=(id:string,title:string,description:string,eligibility?:string)=>({...grant,id,title,description,eligibility:eligibility??null});
+ const fintech={...demo,sector:"Fintech SaaS",description:"Automated bookkeeping and cashflow forecasting for small agencies"};
+ const thermo={...demo,region:"DE" as const,sector:"Climate hardware",description:"High temperature heat pumps for industrial process heat and decarbonization"};
+ const biotech={...demo,sector:"Biotechnology",description:"University team developing therapeutics"};
+ const quantum={...demo,sector:"Deep tech",description:"Quantum processors for fault tolerant computing"};
+ assert.ok(rank([candidate("quantum","Quantum processor pilot","Developing quantum processors")],quantum,Date.parse(at))[0].score>=40);
+ assert.ok(rank([candidate("pay","Technology innovation","Payments are disbursed quarterly")],fintech,Date.parse(at))[0].score<40);
+ assert.ok(rank([candidate("trial","NIH investigator award (Clinical Trial Optional)","University research")],biotech,Date.parse(at))[0].score<40);
+ const thermal=rank([
+  candidate("hot","Industrial heat pump pilot","Decarbonize industrial process heat"),
+  candidate("reservoir","Geothermal reservoirs","High temperature energy engineering"),
+ ],thermo,Date.parse(at));
+ assert.equal(thermal[0].id,"hot");
+ assert.ok(thermal[1].score<40);
+ const [restricted]=rank([candidate("msi","Biotechnology pilot","Therapeutic development","Only Minority Serving Institutions may apply.")],biotech,Date.parse(at));
+ assert.ok(restricted.score<30);
+ assert.match(restricted.reason,/Applicant type is restricted/);
+});
+test("Grants.gov normalizes rolling and stale notices and decodes title entities",()=>{
+ const [rolling,stale,expired]=parseUs({errorcode:0,data:{oppHits:[
+  {id:"41",title:"Law &amp; Science &ndash; rolling",closeDate:"10/15/2076"},
+  {id:"42",title:"EONS 2018",postDate:"05/01/2018"},
+  {id:"43",title:"Expired",closeDate:"05/22/2018"},
+ ]}},at);
+ assert.equal(rolling.title,"Law & Science – rolling");
+ assert.equal(rolling.deadline,null);
+ assert.equal(rolling.status,"Rolling");
+ assert.equal(stale.status,"Closed");
+ assert.equal(expired.status,"Closed");
+});
 test("US grants validate dates, URLs, and response status",()=>{
  assert.equal(grant.deadline,"2026-12-02");
  assert.equal(grant.url,"https://www.grants.gov/search-results-detail/12");
@@ -132,15 +177,16 @@ test("catalog query respects word boundaries",()=>{
  assert.equal(catalogMatch("accelerator","YC accelerators"),true);
 });
 test("NIH distinguishes the next standard due date, expiration and prerequisites",()=>{
- const [parent,phase2,trial]=parseUs({errorcode:0,data:{oppHits:[
+ const [parent,phase2,trial,abbreviatedTrial]=parseUs({errorcode:0,data:{oppHits:[
   {id:"1",agencyCode:"HHS-NIH11",title:"NIH SBIR for medical devices (R43/R44)",closeDate:"04/05/2027"},
   {id:"2",agencyCode:"HHS-NIH11",title:"NIH SBIR Phase IIB for medical devices (R44)",closeDate:"04/05/2027"},
   {id:"3",agencyCode:"HHS-NIH11",title:"NIH medical devices (R03 Clinical Trial Required)",closeDate:"03/01/2027"},
+  {id:"4",agencyCode:"HHS-NIH11",title:"NIH medical devices (R33 CT Required)",closeDate:"03/01/2027"},
  ]}},at);
  assert.equal(parent.deadline,"2027-01-05");
  assert.equal(parent.noticeExpires,"2027-04-05");
  assert.deepEqual(phase2.prerequisites,["Requires prior NIH SBIR/STTR award"]);
- const matches=rank([phase2,trial,parent],{...demo,sector:"Medical devices",description:"SBIR for diagnostic devices",plansClinicalTrial:false},Date.parse(at));
+ const matches=rank([phase2,trial,abbreviatedTrial,parent],{...demo,sector:"Medical devices",description:"SBIR for diagnostic devices",plansClinicalTrial:false},Date.parse(at));
  assert.equal(matches[0].id,parent.id);
  assert.ok(matches.slice(1).every(m=>m.score<=36));
 });

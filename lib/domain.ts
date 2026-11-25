@@ -17,7 +17,7 @@ export const profileSchema = z.object({
 export type Profile = z.infer<typeof profileSchema>;
 function regionsKeys(){ return Object.keys(regions) as (keyof typeof regions)[]; }
 export const demo: Profile = { name: "Canopy Labs", description: "AI software to help small manufacturers reduce energy use and waste.", stage: "Pre-seed", region: "US", sector: "Climate tech", needs: [...kinds] };
-export type ListingStatus = "Open"|"Forthcoming"|"Closed"|"Program link"|"Late applications";
+export type ListingStatus = "Open"|"Rolling"|"Forthcoming"|"Closed"|"Program link"|"Late applications";
 export type Opportunity = {
   id: string; title: string; kind: (typeof kinds)[number] | "Market signal"; region: "US" | "EU" | "DE" | "UK" | "Global";
   source: string; url: string; deadline: string | null; amount: number | null; currency: "USD" | "EUR" | "GBP";
@@ -66,25 +66,34 @@ function topicHits(text: string, tokens: Map<string,string>, phrases: string[]) 
 function profileTopics(subject:string) {
   return {words:new Map(topicWords(subject).map(word=>[stem(word),word])),phrases:relatedTopics(subject)};
 }
-const genericGrantWords=keywords("AI artificial intelligence software SaaS digital innovation innovative automated automation agencies phase seeking university research");
+const genericGrantWords=keywords("AI artificial intelligence software SaaS digital innovation innovative automated automation agencies phase seeking university research developing development high temperature data science technology hardware system systems design designer program federal university academic general project applied engineering implementation pilot tool testing test solutions advanced startup competitive standard technologies industrial applications device equipment process deep infrastructure SBIR STTR");
 const biomedical = /\b(?:health(?:care)?|medical|bio(?:tech\w*|medical)|clinical|therapeutic\w*|diagnostic\w*|pharma\w*|patient\w*)\b/i;
-const biomedicalGrant = /\b(?:nih|nidcr|nichd|nhlbi|clinical trials?)\b/i;
+const biomedicalGrant = /\b(?:nih|nidcr|nichd|nhlbi)\b/i;
 const grantTopic = /^(?:climate|energy|electricity|manufactur\w*|decarboni[sz]\w*|waste)$/i;
 const fintech = /\b(?:fintech|financial technolog\w*|bookkeeping|accounting (?:software|tools?|automation|platforms?)|cash[ -]?flow (?:forecast\w*|management|analysis)|open banking|(?:digital|electronic|mobile|instant|cross[- ]border) payments?|payment (?:systems?|platforms?|processing)|finance teams?|financial ERP)\b/i;
+const trialLabel = /\b(?:clinical trials?|CT)\s*(?:[-:–]\s*)?(?:optional|required|not allowed|not permitted)\b/gi;
+const thermal = /\b(?:heat[- ]pumps?|(?:industrial )?process heat|industrial heating|thermal decarboni[sz]\w*|decarboni[sz]\w* (?:industrial )?(?:process )?heat)\b/i;
 function grantTerms(o:Opportunity,p:Profile,profileText:string,words:Map<string,string>,phrases:string[]) {
-  const scope=(o.title+" "+(o.description??"")).replace(/\b(?:clinical trials?|CT)\s*(?:[-:–]\s*)?(?:optional|required|not allowed|not permitted)\b/gi," ");
-  const sector=new Map([...keywords(p.sector)].filter(word=>!genericGrantWords.has(word)).map(word=>[word,words.get(word)??word]));
-  const scopeHits=topicHits(scope,words,phrases);
-  const fintechHit=fintech.test(profileText) ? scope.match(fintech)?.[0] : undefined;
+  const scope=(o.title+" "+(o.description??"")).replace(trialLabel," ");
+  const thematic=new Map([...words].filter(([word])=>!genericGrantWords.has(word)));
+  if(fintech.test(profileText))return [...new Set((scope.match(new RegExp(fintech.source,"gi"))??[]).map(term=>term.toLowerCase()))];
+  if(thermal.test(profileText)){
+    const match=scope.match(thermal)?.[0]??scope.match(/\bindustrial decarboni[sz]\w*\b/i)?.[0];
+    return match?[match.toLowerCase()]:[];
+  }
+  const sector=new Map([...keywords(p.sector)].filter(word=>thematic.has(word)).map(word=>[word,thematic.get(word)!]));
+  const scopeHits=topicHits(scope,thematic,phrases);
   const sectorHits=topicHits(scope,sector,[]).overlap;
-  const biomedicalHits=biomedical.test(profileText) ? [...(o.title.match(biomedicalGrant)??[]).slice(0,1),...(scope.match(biomedical)??[]).slice(0,1)] : [];
-  const descriptions=scopeHits.overlap.filter(term=>!genericGrantWords.has(stem(term)) && !/^(?:sbir|sttr)$/i.test(term));
+  const isParentNih=/\bNIH\b.*\b(?:parent|SBIR|STTR)\b/i.test(o.title);
+  const biomedicalHits=biomedical.test(profileText) ? [...(isParentNih?["NIH"]:[]),...(scope.match(biomedical)??[]).slice(0,1)] : [];
   const qualifying=[...sectorHits,...scopeHits.related,...scopeHits.overlap.filter(term=>grantTopic.test(term)),
-    ...(descriptions.length>=2?descriptions:[]),
-    ...(fintechHit?[fintechHit]:[]),...biomedicalHits].map(term=>term.toLowerCase());
+    ...(scopeHits.overlap.length>=2?scopeHits.overlap:[]),...biomedicalHits].map(term=>term.toLowerCase());
   if(!qualifying.length) return [];
   const terms=[...qualifying,...scopeHits.overlap.filter(term=>!genericGrantWords.has(stem(term)))];
   return [...new Map(terms.map(term=>[stem(term),term])).values()];
+}
+function exclusiveApplicant(eligibility:string){
+  return /\b(?:only|limited to|restricted to|must be)\s+(?:(?:accredited|eligible|public|private|designated|a|an|the)\s+)*(?:minority[- ]serving institutions?|MSIs?|non[- ]?profits?|universit(?:y|ies)|state governments?)\b|\b(?:minority[- ]serving institutions?|MSIs?|non[- ]?profits?|universit(?:y|ies)|state governments?)\s+(?:only|are the only eligible applicants)\b/i.test(eligibility);
 }
 export function relevantEvidence(facts: Fact[], profile: Profile): Fact[] {
   const subject = profile.sector + " " + profile.description;
@@ -111,7 +120,7 @@ export function listingStatus(o:Opportunity,day=new Date().toISOString().slice(0
   if (o.opensAt && o.opensAt>day) return "Forthcoming";
   return o.status ?? "Program link";
 }
-const statusOrder:Record<ListingStatus,number>={Open:0,"Late applications":0,Forthcoming:1,"Program link":2,Closed:3};
+const statusOrder:Record<ListingStatus,number>={Open:0,Rolling:0,"Late applications":0,Forthcoming:1,"Program link":2,Closed:3};
 export const byListingStatus=(a:Opportunity,b:Opportunity)=>statusOrder[listingStatus(a)]-statusOrder[listingStatus(b)];
 export const catalogWords=(text:string)=>(text.toLowerCase().match(/[\p{L}\p{N}]+/gu)??[]).map(stem);
 export function catalogMatch(query:string,text:string) {
@@ -134,7 +143,7 @@ export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[
       const broadProgram = o.kind!=="Grant" && (o.generic ?? (o.source === "Accelerator directory" && Boolean(o.programId)));
       const early = p.stage === "Idea" || p.stage === "Pre-seed";
       const stageFit = p.stage!=="Not sure" && (early ? /pre-seed|early.stage|phase i\b|accelerat/.test(text) : /scale|growth|phase ii\b/.test(text));
-      const domainMismatch = o.kind === "Grant" && biomedicalGrant.test(o.title) && !biomedical.test(profileText);
+      const domainMismatch = o.kind === "Grant" && (biomedicalGrant.test(o.title)||/\bclinical trials?\b/i.test(o.title)) && !biomedical.test(profileText);
       const fit = domainMismatch ? 4 : broadProgram ? 40 : topicScore===1 ? 43 : topicScore>1 ? 53 + topicScore*6 : 8;
       const days = o.deadline ? Math.max(0,(Date.parse(o.deadline)-Date.parse(day))/86400000) : Infinity;
       const urgency = days <= 14 ? 5 : days <= 45 ? 2 : 0;
@@ -146,9 +155,10 @@ export function rank(items: Opportunity[], p: Profile, now = Date.now()): Match[
         matchedTerms.length ? `Matched: ${matchedTerms.join(", ")}` : "No topical match";
       const needsPrior=o.prerequisites?.includes("Requires prior NIH SBIR/STTR award") && !p.priorNihAward;
       const needsTrial=o.prerequisites?.includes("Clinical trial required") && p.plansClinicalTrial!==true;
-      const cap = domainMismatch ? 15 : !broadProgram && !topicScore ? 20 : needsPrior || needsTrial ? 36 : !broadProgram && topicScore===1 ? 57 : 99;
+      const restricted=o.kind==="Grant" && exclusiveApplicant(o.eligibility??"");
+      const cap = domainMismatch ? 15 : !broadProgram && !topicScore ? 20 : restricted ? 27 : needsPrior || needsTrial ? 36 : !broadProgram && topicScore===1 ? 57 : 99;
       return {...o, score: Math.max(0,Math.round(Math.min(cap,score))), regionNote:region.note,matchedTerms,
-        reason: [topic, region.local ? "Matches your region" : region.note ?? "Global listing", ...(o.prerequisites??[]), stageFit ? "Stage signal" : "", days <= 14 ? "Closing soon" : "", o.signal ? "News signal, not an open application" : "Confirm eligibility at the source"].filter(Boolean).join(" · ")};
+        reason: [topic, region.local ? "Matches your region" : region.note ?? "Global listing", ...(o.prerequisites??[]), restricted?"Applicant type is restricted; startups may not qualify":"", stageFit ? "Stage signal" : "", days <= 14 ? "Closing soon" : "", o.signal ? "News signal, not an open application" : "Confirm eligibility at the source"].filter(Boolean).join(" · ")};
     }).sort((a,b) => b.score-a.score || (a.deadline ?? "9999").localeCompare(b.deadline ?? "9999") || a.id.localeCompare(b.id));
 }
 export function template(p: Profile, m: Match) {
