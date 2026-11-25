@@ -3,7 +3,7 @@
 import Link from "next/link";
 import {useEffect,useState,type FormEvent} from "react";
 
-type BillingStatus={enabled:boolean;pro:boolean;issued:boolean;customer:boolean};
+type BillingStatus={enabled:boolean;pro:boolean;issued:boolean;customer:boolean;restored?:boolean};
 
 export function BillingControls({success=false}:{success?:boolean}){
  const [status,setStatus]=useState<BillingStatus>();
@@ -67,12 +67,12 @@ export function BillingControls({success=false}:{success?:boolean}){
    {key&&<label>Save this Pro API key now. It won’t be shown again.
     <input type="text" value={key} readOnly onFocus={event=>event.currentTarget.select()}/>
    </label>}
-   {status.pro&&status.issued&&!key&&<p className="muted">Use your saved key to restore Pro on another device. If you lost it, replacing it will invalidate the old key.</p>}
+   {status.pro&&status.issued&&!key&&<p className="muted">{status.restored?"To replace the key, use the browser you used for Checkout.":"Replacing your key invalidates the old key and signs out browsers restored with it."}</p>}
    <div className="action-strip">
     {!success&&!status.pro&&<button className="primary" disabled={busy} onClick={()=>void act("checkout")}>Upgrade to Pro ↗</button>}
     {success&&!status.pro&&!waiting&&<button className="secondary" onClick={()=>{setWaiting(true);setAttempt(previous=>previous+1);}}>Check again</button>}
-    {status.pro&&!status.issued&&<button className="primary" disabled={busy} onClick={()=>void act("claim")}>Show my Pro API key</button>}
-    {status.pro&&status.issued&&!key&&<button className="secondary" disabled={busy} onClick={()=>void act("claim",{rotate:true})}>Replace Pro API key</button>}
+    {status.pro&&!status.restored&&!status.issued&&<button className="primary" disabled={busy} onClick={()=>void act("claim")}>Show my Pro API key</button>}
+    {status.pro&&!status.restored&&status.issued&&!key&&<button className="secondary" disabled={busy} onClick={()=>void act("claim",{rotate:true})}>Replace Pro API key</button>}
     {status.customer&&<button className="secondary" disabled={busy} onClick={()=>void act("portal")}>Manage billing ↗</button>}
     {!status.pro&&<button className="secondary" aria-expanded={restore} onClick={()=>setRestore(!restore)}>Restore Pro</button>}
     {success&&status.pro&&<Link className="secondary nav-link pricing-link" href="/">Open funding radar ↗</Link>}

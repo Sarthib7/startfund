@@ -27,9 +27,9 @@ export function billingHandlers(config:Config|null=billingConfig(),stripe=config
  return {
   async status(request:Request){
    if(!config)return json({enabled:false,pro:false,issued:false,customer:false});
-   const {id,cookie}=await browserVisitor(request);
+   const {id,cookie,restored}=await browserVisitor(request);
    const account=cookie?null:await billingAccount(id);
-   const response=json({enabled:true,pro:account?.pro??false,issued:account?.issued??false,customer:Boolean(account)});
+   const response=json({enabled:true,pro:account?.pro??false,issued:account?.issued??false,customer:Boolean(account),...(restored?{restored}:{})});
    if(cookie)response.headers.append("Set-Cookie",cookie);
    return response;
   },
@@ -62,17 +62,19 @@ export function billingHandlers(config:Config|null=billingConfig(),stripe=config
     });
     if(action==="restore"){
      const input=await request.json().catch(()=>null);
-     const visitor=typeof input?.key==="string"?await visitorForProKey(input.key.trim(),"restore"):null;
+     const key=typeof input?.key==="string"?input.key.trim():"";
+     const visitor=await visitorForProKey(key,"restore");
      if(!visitor)return json({error:"This key can’t restore a billing account."},401);
      const response=json({ok:true});
-     response.headers.append("Set-Cookie",await restoreVisitorCookie(request,visitor));
+     response.headers.append("Set-Cookie",await restoreVisitorCookie(request,visitor,key));
      return response;
     }
-    const {id,cookie}=await browserVisitor(request);
+    const {id,cookie,restored}=await browserVisitor(request);
     if(cookie)return json({error:"No billing account found on this device."},404);
     const account=await billingAccount(id);
     if(!account)return json({error:"No billing account found on this device."},404);
     if(action==="claim"){
+     if(restored)return json({error:"Use the browser you used for Checkout to manage your Pro API key."},403);
      if(!account.pro)return json({error:"Pro is not active yet."},409);
      const input=await request.json().catch(()=>null);
      const rotate=input?.rotate===true;

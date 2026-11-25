@@ -108,6 +108,10 @@ test("signed Stripe events drive shared Pro quotas, one-time recovery, and Porta
   assert.equal(restored.status,200);
   const restoredCookie=restored.headers.get("set-cookie")!.split(";")[0];
   assert.deepEqual(await usageIdentity(statusRequest(restoredCookie)),owner);
+  assert.equal((await (await handlers.status(statusRequest(restoredCookie))).json()).restored,true);
+  assert.equal((await handlers.browser(request("claim",restoredCookie,{rotate:true}),"claim")).status,403);
+  assert.ok(restoredCookie.endsWith(".r"));
+  assert.equal((await handlers.browser(request("claim",restoredCookie.slice(0,-2),{rotate:true}),"claim")).status,404);
   const portal=await handlers.browser(request("portal",restoredCookie),"portal");
   assert.deepEqual(await portal.json(),{url:"https://billing.stripe.test/manage"});
 
@@ -156,9 +160,19 @@ test("signed Stripe events drive shared Pro quotas, one-time recovery, and Porta
   const [updated]=await (await db()).all("SELECT key_hash FROM billing_customers WHERE visitor=?",visitor);
   assert.equal(updated.key_hash,createHash("sha256").update(newKey).digest("hex"));
   assert.equal(await usageIdentity(apiRequest),null);
+  const revokedIdentity=await usageIdentity(statusRequest(restoredCookie));
+  assert.equal(revokedIdentity?.plan,"Free");
+  assert.notEqual(revokedIdentity?.actor,owner.actor);
+  assert.equal((await (await handlers.status(statusRequest(restoredCookie))).json()).customer,false);
+  assert.equal((await handlers.browser(request("portal",restoredCookie),"portal")).status,404);
+  assert.deepEqual(await usageIdentity(statusRequest(cookie)),owner);
   assert.equal((await handlers.browser(request("restore",undefined,{key}),"restore")).status,401);
   assert.deepEqual(await usageIdentity(new Request(origin,{headers:{Authorization:"Bearer "+newKey}})),owner);
-  assert.equal((await handlers.browser(request("restore",undefined,{key:newKey}),"restore")).status,200);
+  const newRestore=await handlers.browser(request("restore",undefined,{key:newKey}),"restore");
+  assert.equal(newRestore.status,200);
+  const newRestoredCookie=newRestore.headers.get("set-cookie")!.split(";")[0];
+  assert.deepEqual(await usageIdentity(statusRequest(newRestoredCookie)),owner);
+  assert.equal((await handlers.browser(request("claim",newRestoredCookie,{rotate:true}),"claim")).status,403);
  }finally{
   delete process.env.STRIPE_SECRET_KEY;
   delete process.env.STRIPE_WEBHOOK_SECRET;

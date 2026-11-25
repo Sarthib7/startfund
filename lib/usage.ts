@@ -1,6 +1,6 @@
 import {createHash,createHmac,randomBytes,randomUUID,timingSafeEqual} from "node:crypto";
 import {isIP} from "node:net";
-import {billingAccount,billingConfig,visitorForProKey} from "./billing-state";
+import {billingAccount,billingConfig,currentProKeyHash,proKeyHash,visitorForProKey} from "./billing-state";
 import {db} from "./database";
 import {plans} from "./plans";
 
@@ -26,18 +26,27 @@ function usageSecret(){
  })().catch(e=>{signingKey=undefined;throw e;});
 }
 const bearer=(request:Request)=>request.headers.get("authorization")?.match(/^Bearer ([^\s]+)$/i)?.[1];
-function signedVisitorCookie(request:Request,id:string,secret:string){
+const visitorSignature=(secret:string,id:string,keyHash?:string)=>
+ mac(secret,keyHash?"restored-visitor:"+id+":"+keyHash:"visitor:"+id);
+function signedVisitorCookie(request:Request,id:string,secret:string,keyHash?:string){
  const secure=new URL(request.url).protocol==="https:"?"; Secure":"";
- return `${visitorCookie}=${id}.${mac(secret,"visitor:"+id)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=7776000${secure}`;
+ return `${visitorCookie}=${id}.${visitorSignature(secret,id,keyHash)}${keyHash?".r":""}; Path=/; HttpOnly; SameSite=Lax; Max-Age=7776000${secure}`;
 }
-export async function restoreVisitorCookie(request:Request,id:string){
- return signedVisitorCookie(request,id,await usageSecret());
+export async function restoreVisitorCookie(request:Request,id:string,key:string){
+ return signedVisitorCookie(request,id,await usageSecret(),proKeyHash(key));
 }
 async function readVisitor(request:Request,secret:string){
- const value=request.headers.get("cookie")?.match(/(?:^|;\s*)startfund-visitor=([a-f0-9-]{36})\.([\w-]{43})(?:;|$)/);
- if(value&&sameSecret(value[2],mac(secret,"visitor:"+value[1])))return {id:value[1]};
+ const value=request.headers.get("cookie")?.match(/(?:^|;\s*)startfund-visitor=([a-f0-9-]{36})\.([\w-]{43})(\.r)?(?:;|$)/);
+ if(value){
+  const [,id,signature,restored]=value;
+  if(!restored&&sameSecret(signature,visitorSignature(secret,id)))return {id,restored:false};
+  if(restored){
+   const keyHash=await currentProKeyHash(id);
+   if(keyHash&&sameSecret(signature,visitorSignature(secret,id,keyHash)))return {id,restored:true};
+  }
+ }
  const id=randomUUID();
- return {id,cookie:signedVisitorCookie(request,id,secret)};
+ return {id,cookie:signedVisitorCookie(request,id,secret),restored:false};
 }
 export async function browserVisitor(request:Request){
  return readVisitor(request,await usageSecret());

@@ -12,7 +12,7 @@ const subscriptionExists=(statuses:string)=>`EXISTS (SELECT 1 FROM billing_subsc
  WHERE s.customer=c.customer AND s.status IN (${statuses}))`;
 const entitlement=subscriptionExists("'active','trialing'");
 const canRestore=subscriptionExists("'active','trialing','past_due','unpaid'");
-const hashKey=(key:string)=>createHash("sha256").update(key).digest("hex");
+export const proKeyHash=(key:string)=>createHash("sha256").update(key).digest("hex");
 const keyPattern=/^sf_pro_[A-Za-z0-9_-]{43}$/;
 
 export async function billingAccount(visitor:string){
@@ -45,12 +45,17 @@ export async function recordBillingEvent(id:string,created:number,customer:strin
 export async function claimProKey(visitor:string,rotate=false){
  const key="sf_pro_"+randomBytes(32).toString("base64url");
  const updated=await (await db()).run(`UPDATE billing_customers AS c SET key_hash=?
-  WHERE visitor=? AND key_hash IS ${rotate?"NOT NULL":"NULL"} AND ${entitlement}`,hashKey(key),visitor);
+  WHERE visitor=? AND key_hash IS ${rotate?"NOT NULL":"NULL"} AND ${entitlement}`,proKeyHash(key),visitor);
  return updated?key:null;
+}
+
+export async function currentProKeyHash(visitor:string){
+ const [row]=await (await db()).all("SELECT key_hash FROM billing_customers WHERE visitor=?",visitor);
+ return typeof row?.key_hash==="string"?row.key_hash:null;
 }
 
 export async function visitorForProKey(key:string,purpose:"api"|"restore"="api"){
  if(!keyPattern.test(key))return null;
- const [row]=await (await db()).all(`SELECT visitor FROM billing_customers c WHERE key_hash=? AND ${purpose==="restore"?canRestore:entitlement}`,hashKey(key));
+ const [row]=await (await db()).all(`SELECT visitor FROM billing_customers c WHERE key_hash=? AND ${purpose==="restore"?canRestore:entitlement}`,proKeyHash(key));
  return row?String(row.visitor):null;
 }
