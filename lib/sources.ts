@@ -142,7 +142,8 @@ export async function enrichUs(row:Opportunity, read:Reader):Promise<Opportunity
     const closed=sourceClosed||(expires?expires<today:row.status==="Closed");
     const rolling=!expires&&/\b(?:applications?|proposals?)\s+(?:(?:are|will be|may be)\s+)?accepted\s+(?:at any time|anytime|on a rolling basis)\b/i.test((description??"")+" "+(synopsis.responseDateDesc??""));
     const dateFields=expires?federalTerms(row.title,row.contact?"HHS-NIH":undefined,expires,row.fetchedAt):undefined;
-    return {...row,...dateFields,...(sourceClosed?{sourceClosed}:{}),...(closed?{status:"Closed" as const}:rolling?{deadline:null,noticeExpires:undefined,deadlineNote:undefined,status:"Rolling" as const}:expires?{status:"Open" as const}:{}),
+    return {...row,...dateFields,...(sourceClosed?{sourceClosed}:{}),...(expires||rolling?{synopsisStatusVerified:true}:{}),
+      ...(closed?{status:"Closed" as const}:rolling?{deadline:null,noticeExpires:undefined,deadlineNote:undefined,status:"Rolling" as const}:expires?{status:"Open" as const}:{}),
       amount:cash(synopsis.awardCeiling),awardFloor:cash(synopsis.awardFloor),programFunding:cash(synopsis.estimatedFunding),eligibility,
       prerequisites:[...new Set([...(row.prerequisites??[]),...(dateFields?.prerequisites??[]),...(prior ? ["Requires prior NIH SBIR/STTR award"]:[])])],
       description};

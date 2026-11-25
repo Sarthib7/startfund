@@ -6,6 +6,7 @@ import { enrichUs, parseEu, parseHn, parseInnovateUk, parseUs, searchUs, sources
 import { cordisFacts, nsfFacts, secFacts, ukriFact, ycFacts } from "../lib/facts";
 import { curatedProgramRows } from "../lib/programs";
 import { catalogOverview } from "../lib/catalog-overview";
+import { mergeOpportunities } from "../lib/store";
 
 const at="2026-11-25T12:00:00Z";
 const [grant]=parseUs({errorcode:0,data:{oppHits:[{id:"12",title:"Energy software Phase I",closeDate:"12/02/2026"}]}},at);
@@ -130,6 +131,22 @@ test("Grants.gov never reopens explicit closure or archive evidence from search"
   assert.equal(enriched.status,"Closed");
   assert.equal(enriched.sourceClosed,true);
  }
+});
+test("Grants.gov deadline-only synopsis corrections win tied search copies",async()=>{
+ const [expired,explicitlyClosed]=parseUs({errorcode:0,data:{oppHits:[
+  {id:"13",title:"Extended grant",closeDate:"11/01/2026"},
+  {id:"13",title:"Extended grant",oppStatus:"closed"},
+ ]}},at);
+ const extended=await enrichUs(expired,async()=>({data:{ost:"POSTED",synopsis:{
+  awardCeiling:null,awardFloor:null,estimatedFunding:null,closeDate:"12/15/2026",
+ }}}));
+ assert.equal(extended.fetchedAt,expired.fetchedAt);
+ assert.equal(extended.description,undefined);
+ assert.equal(extended.status,"Open");
+ assert.deepEqual(mergeOpportunities([expired,extended]),[extended]);
+ assert.deepEqual(mergeOpportunities([extended,expired]),[extended]);
+ assert.deepEqual(mergeOpportunities([extended,explicitlyClosed]),[explicitlyClosed]);
+ assert.deepEqual(mergeOpportunities([explicitlyClosed,extended]),[explicitlyClosed]);
 });
 test("Grants.gov skips placeholder deadline fields before choosing a synopsis date",async()=>{
  const [undated]=parseUs({errorcode:0,data:{oppHits:[{id:"13",title:"Grant with placeholder date"}]}},at);

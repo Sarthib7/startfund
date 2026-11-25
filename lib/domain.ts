@@ -47,7 +47,8 @@ export type Opportunity = {
   id: string; title: string; kind: (typeof kinds)[number] | "Market signal"; region: "US" | "EU" | "DE" | "UK" | "Global";
   source: string; url: string; deadline: string | null; amount: number | null; currency: "USD" | "EUR" | "GBP" | "INR" | "AUD" | "SGD";
   eligibility: string | null; fetchedAt: string; signal?: boolean; programId?: string; description?: string;
-  status?: ListingStatus; sourceClosed?:boolean; opensAt?: string|null; programme?: string; postedAt?:string; generic?:boolean; contact?:string;
+  status?: ListingStatus; sourceClosed?:boolean; synopsisStatusVerified?:boolean;
+  opensAt?: string|null; programme?: string; postedAt?:string; generic?:boolean; contact?:string;
   verifiedAt?:string; noticeExpires?:string; deadlineNote?:string; applicationGuide?:string;
   awardFloor?:number|null; programFunding?:number|null; prerequisites?:string[]; countries?:string[]; subdivisions?:string[];
   cpvCodes?:string[]; cpvScope?:"procedure-and-lots";
