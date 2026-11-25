@@ -1,12 +1,12 @@
 export type Reader = (url:string, init?:RequestInit)=>Promise<unknown>;
 export type Snapshot = { url:string; body:string; etag:string|null; modified:string|null };
-export function reader(options:{contact?:string; lookUp?:(url:string)=>Snapshot|undefined; capture?:(s:Snapshot)=>void}={}):Reader{
+export function reader(options:{contact?:string; lookUp?:(url:string)=>Snapshot|undefined|Promise<Snapshot|undefined>; capture?:(s:Snapshot)=>void|Promise<void>}={}):Reader{
  return async (url,init)=>{
   const headers=new Headers(init?.headers);
   if (!headers.has("accept")) headers.set("accept","application/json");
   const text=["text/html","text/plain","application/rss+xml","application/xml","text/xml"].includes(headers.get("accept")??"");
   headers.set("user-agent",["Startfund/0.1", options.contact || "https://github.com/Sarthib7/startfund"].join(" "));
-  const previous=(!init?.method || init.method==="GET") ? options.lookUp?.(url) : undefined;
+  const previous=(!init?.method || init.method==="GET") ? await options.lookUp?.(url) : undefined;
   if(previous?.etag) headers.set("if-none-match",previous.etag);
   if(previous?.modified) headers.set("if-modified-since",previous.modified);
   const r=await fetch(url,{...init,headers,signal:AbortSignal.timeout(8000),cache:"no-store"});
@@ -19,7 +19,7 @@ export function reader(options:{contact?:string; lookUp?:(url:string)=>Snapshot|
     const {token:_token,...rest}=parsed;
     body=JSON.stringify(rest);
   }
-  options.capture?.({url,body,etag:r.headers.get("etag"),modified:r.headers.get("last-modified")});
+  await options.capture?.({url,body,etag:r.headers.get("etag"),modified:r.headers.get("last-modified")});
   return parsed;
  };
 }

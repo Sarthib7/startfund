@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { companyUrl, inferCompany, robotsAllows } from "../lib/company";
+import { companyUrl, inferCompany, readCompanyPages, robotsAllows } from "../lib/company";
 
 test("company analysis rejects literal private addresses, credentials and non-HTTPS endpoints",()=>{
  for(const input of ["http://company.com","https://127.0.0.1","https://[::1]","https://user@company.com","https://company.com:8000","https://company.local","A company name"]) assert.equal(companyUrl(input),null);
@@ -18,4 +18,24 @@ test("company analysis obeys crawler-specific path rules and infers editable pub
  assert.equal(profile.region,"DE");
  assert.equal(profile.companyCountry,"DE");
  assert.equal(inferCompany("","",new URL("https://example.fr")).companyCountry,"FR");
+ const german=inferCompany('<html lang="de"><title>Sauberer Strom | 1KOMMA5°</title><h1>Solar und Wärmepumpen</h1>',"",new URL("https://1komma5.com/de/"));
+ assert.equal(german.name,"1KOMMA5°");
+ assert.equal(german.region,"DE");
+});
+test("company reader checks robots again at the redirected host and accepts successful HTML",async()=>{
+ const calls:string[]=[];
+ const read=async(url:URL)=>{
+  calls.push(url.href);
+  if(url.pathname==="/robots.txt")return {status:404,body:""};
+  if(url.hostname==="rillet.com")return {status:308,body:"",location:"https://www.rillet.com/home"};
+  return {status:202,body:"<title>Rillet | AI-native ERP</title><h1>Finance teams</h1>"};
+ };
+ const pages=await readCompanyPages(new URL("https://rillet.com"),read);
+ assert.deepEqual(calls,["https://rillet.com/robots.txt","https://rillet.com/","https://www.rillet.com/robots.txt","https://www.rillet.com/home"]);
+ const profile=inferCompany(pages.home,pages.about,pages.url);
+ assert.equal(profile.name,"Rillet");
+ assert.equal(profile.sector,"Fintech / B2B SaaS");
+ assert.equal(profile.stage,"Not sure");
+ await assert.rejects(readCompanyPages(new URL("https://rillet.com"),url=>
+  url.hostname==="www.rillet.com"?Promise.resolve({status:200,body:"User-agent: *\nDisallow: /"}):read(url)),/does not allow/);
 });

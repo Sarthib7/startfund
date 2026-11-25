@@ -9,7 +9,14 @@ npm run build
 npm start
 ```
 
-Open http://localhost:3100. Requires Node.js 24+. Use `npm run dev` for development. Data is stored in SQLite under `.radar/`; set `RADAR_DB_PATH` to a persistent volume for a single-instance deployment. Do not deploy this storage on an ephemeral filesystem if you need persistent profiles/digests.
+Open http://localhost:3100. Requires Node.js 24+. Use `npm run dev` for development. Data is stored in SQLite under `.radar/`; set `RADAR_DB_PATH` to a persistent volume for a single-instance deployment.
+
+### Public deployment on Vercel
+
+1. Create a [Turso](https://turso.tech/) database on the free plan and a database auth token. Use a primary location near your Vercel functions.
+2. [Import the repository](https://vercel.com/new) as a Next.js project with Node.js 24 and `main` as the production branch. Keep the default repository root and the package's `npm run build` command (it builds eve and Next.js).
+3. Set `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` for Production, and for Preview if you also want branch deployments (prefer a separate database for previews). Startfund creates its tables on first use. It does not fall back to ephemeral SQLite on Vercel; existing local data is not migrated.
+4. Deploy production and verify the production URL is accessible in a private browser without Vercel login; configure [Deployment Protection](https://vercel.com/docs/deployment-protection) as needed. `RADAR_SOURCE_CONTACT` enables SEC evidence. Model and Resend credentials are optional; the default public deployment uses template drafts and has no email delivery. Set `RADAR_EVE_URL` to the production origin if enabling model drafts, and use that origin for `RADAR_PUBLIC_ORIGIN` if enabling digest subscriptions.
 
 - **Sources:** Grants.gov and EU Funding & Tenders provide open calls. NSF Awards, CORDIS and UKRI GtR provide sampled historical award records; they do not describe open applications or aggregate disbursements. The public YC OSS directory provides derived batch history, not published application deadlines. Hacker News supplies funding and growth signals, not applications. The curated accelerator/corporate program directory links to official pages without scraping them. Each source has a provenance/reuse note; no Outreachr seed data was imported.
 - **Form D:** Set `RADAR_SOURCE_CONTACT` to a real monitored email address before enabling SEC EDGAR. Only public filing metadata is ingested. Filers are not independently vetted investors, and filings do not show portfolio checks or investor reputation.

@@ -53,13 +53,13 @@ test("TED drops construction and unclassified notices even when the API returns 
  assert.deepEqual(parseTed({notices:[construction,mixed,unknown,notice]},at).map(o=>o.id),[tender.id]);
 });
 
-test("saved radar results do not surface tenders from before CPV filtering",t=>{
+test("saved radar results do not surface tenders from before CPV filtering",async t=>{
  const previous=process.env.RADAR_DB_PATH;
  process.env.RADAR_DB_PATH=":memory:";
  t.after(()=>{if(previous===undefined) delete process.env.RADAR_DB_PATH; else process.env.RADAR_DB_PATH=previous;});
  const match={...tender,score:82,reason:"Matched software"};
- save("legacy-tenders",demo,{matches:[{...match,id:"legacy",cpvCodes:undefined},match],warnings:[],scannedAt:at});
- assert.deepEqual(saved("legacy-tenders")?.digest?.matches,[match]);
+ await save("legacy-tenders",demo,{matches:[{...match,id:"legacy",cpvCodes:undefined},match],warnings:[],scannedAt:at});
+ assert.deepEqual((await saved("legacy-tenders"))?.digest?.matches,[match]);
 });
 
 test("Förderdatenbank verifies subsidy type on federal and Länder details without assuming an application window",async()=>{

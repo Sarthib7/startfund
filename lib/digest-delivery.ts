@@ -1,11 +1,16 @@
-export function digestDelivery(email:string) {
+function configuration() {
   const key=process.env.RESEND_API_KEY, from=process.env.RADAR_EMAIL_FROM, allowed=process.env.RADAR_ALLOWED_RECIPIENT;
   const origin=process.env.RADAR_PUBLIC_ORIGIN;
-  if (!key || !from || !origin || email.toLowerCase()!==allowed?.toLowerCase()) return null;
+  if (!key || !from || !origin || !allowed) return null;
   try {
     const url=new URL(origin);
-    return url.protocol==="https:" ? {key,from,origin:url.origin} : null;
+    return url.protocol==="https:" ? {key,from,origin:url.origin,allowed} : null;
   } catch { return null; }
+}
+export const digestEmailAvailable=()=>Boolean(configuration());
+export function digestDelivery(email:string) {
+  const config=configuration();
+  return config && email.toLowerCase()===config.allowed.toLowerCase() ? config : null;
 }
 export function digestLink(origin:string,mode:"confirm"|"unsubscribe",token:string) {
   return new URL("/api/digest?"+new URLSearchParams({mode,token}),origin).href;

@@ -2,11 +2,57 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { catalogMatch, demo, profileQueries, rank, shortlist, template, type Opportunity } from "../lib/domain";
 import { digestHtml } from "../lib/digest";
-import { parseEu, parseHn, parseInnovateUk, parseUs } from "../lib/sources";
+import { parseEu, parseHn, parseInnovateUk, parseUs, sources } from "../lib/sources";
 import { cordisFacts, nsfFacts, secFacts, ukriFact, ycFacts } from "../lib/facts";
+import { curatedProgramRows } from "../lib/programs";
+import { catalogOverview } from "../lib/catalog-overview";
 
 const at="2026-11-25T12:00:00Z";
 const [grant]=parseUs({errorcode:0,data:{oppHits:[{id:"12",title:"Energy software Phase I",closeDate:"12/02/2026"}]}},at);
+test("catalog analytics only count and link the displayed cohort",()=>{
+ const data=catalogOverview([
+  {...grant,id:"open",amount:15000},
+  {...grant,id:"closed",deadline:"2026-11-24",amount:20000},
+  {...grant,id:"rolling",status:"Rolling",deadline:null},
+  {...grant,id:"future",status:"Forthcoming",opensAt:"2026-12-01"},
+ ],"2026-11-25");
+ assert.equal(data.total,4);
+ assert.equal(data.open,2);
+ assert.equal(data.withAmount,1);
+ assert.deepEqual(data.byType,[{label:"Grant",count:4}]);
+ assert.deepEqual(data.deadlines.map(row=>row.id),["open"]);
+});
+test("grant evidence matches core sectors, not disbursements, clinical labels or generic words",()=>{
+ const candidate=(id:string,title:string,description:string,eligibility?:string)=>({...grant,id,title,description,eligibility:eligibility??null});
+ const fintech={...demo,sector:"Fintech SaaS",description:"Automated bookkeeping and cashflow forecasting for small agencies"};
+ const thermo={...demo,region:"DE" as const,sector:"Climate hardware",description:"High temperature heat pumps for industrial process heat and decarbonization"};
+ const biotech={...demo,sector:"Biotechnology",description:"University team developing therapeutics"};
+ const quantum={...demo,sector:"Deep tech",description:"Quantum processors for fault tolerant computing"};
+ assert.ok(rank([candidate("quantum","Quantum processor pilot","Developing quantum processors")],quantum,Date.parse(at))[0].score>=40);
+ assert.ok(rank([candidate("pay","Technology innovation","Payments are disbursed quarterly")],fintech,Date.parse(at))[0].score<40);
+ assert.ok(rank([candidate("trial","NIH investigator award (Clinical Trial Optional)","University research")],biotech,Date.parse(at))[0].score<40);
+ const thermal=rank([
+  candidate("hot","Industrial heat pump pilot","Decarbonize industrial process heat"),
+  candidate("reservoir","Geothermal reservoirs","High temperature energy engineering"),
+ ],thermo,Date.parse(at));
+ assert.equal(thermal[0].id,"hot");
+ assert.ok(thermal[1].score<40);
+ const [restricted]=rank([candidate("msi","Biotechnology pilot","Therapeutic development","Only Minority Serving Institutions may apply.")],biotech,Date.parse(at));
+ assert.ok(restricted.score<30);
+ assert.match(restricted.reason,/Applicant type is restricted/);
+});
+test("Grants.gov normalizes rolling and stale notices and decodes title entities",()=>{
+ const [rolling,stale,expired]=parseUs({errorcode:0,data:{oppHits:[
+  {id:"41",title:"Law &amp; Science &ndash; rolling",closeDate:"10/15/2076"},
+  {id:"42",title:"EONS 2018",postDate:"05/01/2018"},
+  {id:"43",title:"Expired",closeDate:"05/22/2018"},
+ ]}},at);
+ assert.equal(rolling.title,"Law & Science – rolling");
+ assert.equal(rolling.deadline,null);
+ assert.equal(rolling.status,"Rolling");
+ assert.equal(stale.status,"Closed");
+ assert.equal(expired.status,"Closed");
+});
 test("US grants validate dates, URLs, and response status",()=>{
  assert.equal(grant.deadline,"2026-12-02");
  assert.equal(grant.url,"https://www.grants.gov/search-results-detail/12");
@@ -52,7 +98,8 @@ test("ranking rewards urgency and local eligibility, flags other regions and fil
 });
 test("digest escapes model-independent listing and profile content",()=>{
  const matches=rank([{...grant,title:"<script>alert(1)</script>"}],demo,Date.parse(at));
- const html=digestHtml({...demo,name:"A&B"},{matches,warnings:[],scannedAt:at});
+ const html=digestHtml({...demo,name:"A&B"},{matches,warnings:["NSF Awards: topical search unavailable"],scannedAt:at});
+ assert.doesNotMatch(html,/topical search unavailable/);
  assert.match(html,/A&amp;B/);assert.doesNotMatch(html,/<script>/);
 });
 test("the shortlist keeps distinct needs visible even when one dominates",()=>{
@@ -90,6 +137,33 @@ test("category reservations do not add off-topic signals or grants",()=>{
  const matches=rank([growth,{...grant,id:"nih",title:"NIH energy software Phase I trial"},grant],demo,Date.parse(at));
  assert.deepEqual(shortlist(matches).map(m=>m.id),[grant.id]);
 });
+test("LedgerFlow needs real fintech scope, not generic grant language or applicant eligibility",()=>{
+ const ledger={...demo,name:"LedgerFlow",sector:"Fintech SaaS",description:"Automated bookkeeping and cashflow forecasting SaaS for freelance designers and small agencies"};
+ const listing=(id:string,title:string,patch:Partial<Opportunity>={}):Opportunity=>({...grant,id,title,...patch});
+ const rows=[
+  listing("tuna","SEFSC Bluefin Tuna Research Program",{eligibility:"Federal agencies or institutions are not eligible."}),
+  listing("cipher","CIPHER Open Call 1",{description:"Test an automated cyber security SaaS platform."}),
+  listing("materials","Automated Scientific Discovery — Materials Science",{description:"Materials designers run automated experiments."}),
+  listing("mission","General AI and Software Innovation",{description:"AI software innovation for small businesses.",eligibility:"Financial technology businesses may apply."}),
+  listing("finance","Pilot for cash flow forecasting",{description:"Research grants for small businesses testing accounting tools."}),
+  ...curatedProgramRows(at),
+ ];
+ assert.deepEqual(shortlist(rank(rows,ledger,Date.parse(at))).filter(m=>m.kind==="Grant").map(m=>m.id),["finance"]);
+ assert.ok(!shortlist(rank(rows,{...ledger,sector:"Fintech AI software innovation"},Date.parse(at))).some(m=>m.id==="mission"));
+});
+test("the top ten still include climate grants and parent NIH awards with real scope",()=>{
+ const curated=curatedProgramRows(at);
+ const genesis={...grant,id:"genesis",title:"The Genesis Mission: Transforming Science and Energy with AI",description:"Advanced manufacturing and biotechnology are listed topic areas."};
+ const nasa={...grant,id:"nasa",title:"NASA University Research and Education",description:"University teams compete for Phase I SBIR and STTR."};
+ const nih=[{...grant,id:"nih-sbir",title:"NIH Parent SBIR (Clinical Trial Optional)"},
+   {...grant,id:"nih-sttr",title:"NIH Parent STTR (Clinical Trial Optional)"}];
+ const top=(profile:typeof demo)=>shortlist(rank([genesis,nasa,...nih,...curated],profile,Date.parse(at))).slice(0,10).map(m=>m.id);
+ assert.ok(["genesis","nsf-seed"].every(id=>top(demo).includes(id)));
+ const biotech={...demo,name:"Biotech Lab",sector:"Biotechnology",description:"University spinout commercializing biotechnology and seeking Phase I SBIR STTR."};
+ const biotechTop=top(biotech);
+ assert.ok(["nsf-seed","nih-sbir","nih-sttr"].every(id=>biotechTop.includes(id)));
+ assert.ok(!biotechTop.includes("nasa"));
+});
 test("profile queries expand energy and manufacturing without sending the name or email",()=>{
  const queries=profileQueries({...demo,email:"founder@example.com"});
  for(const expected of ["climate tech","energy efficiency","advanced manufacturing","decarbonization","clean energy"]) assert.ok(queries.includes(expected));
@@ -103,15 +177,16 @@ test("catalog query respects word boundaries",()=>{
  assert.equal(catalogMatch("accelerator","YC accelerators"),true);
 });
 test("NIH distinguishes the next standard due date, expiration and prerequisites",()=>{
- const [parent,phase2,trial]=parseUs({errorcode:0,data:{oppHits:[
+ const [parent,phase2,trial,abbreviatedTrial]=parseUs({errorcode:0,data:{oppHits:[
   {id:"1",agencyCode:"HHS-NIH11",title:"NIH SBIR for medical devices (R43/R44)",closeDate:"04/05/2027"},
   {id:"2",agencyCode:"HHS-NIH11",title:"NIH SBIR Phase IIB for medical devices (R44)",closeDate:"04/05/2027"},
   {id:"3",agencyCode:"HHS-NIH11",title:"NIH medical devices (R03 Clinical Trial Required)",closeDate:"03/01/2027"},
+  {id:"4",agencyCode:"HHS-NIH11",title:"NIH medical devices (R33 CT Required)",closeDate:"03/01/2027"},
  ]}},at);
  assert.equal(parent.deadline,"2027-01-05");
  assert.equal(parent.noticeExpires,"2027-04-05");
  assert.deepEqual(phase2.prerequisites,["Requires prior NIH SBIR/STTR award"]);
- const matches=rank([phase2,trial,parent],{...demo,sector:"Medical devices",description:"SBIR for diagnostic devices",plansClinicalTrial:false},Date.parse(at));
+ const matches=rank([phase2,trial,abbreviatedTrial,parent],{...demo,sector:"Medical devices",description:"SBIR for diagnostic devices",plansClinicalTrial:false},Date.parse(at));
  assert.equal(matches[0].id,parent.id);
  assert.ok(matches.slice(1).every(m=>m.score<=36));
 });
@@ -121,6 +196,20 @@ test("Innovate UK parses competition facts and links, not page boilerplate",()=>
  assert.equal(row.status,"Open");
  assert.equal(row.region,"UK");
  assert.match(row.url,/service\.gov\.uk\/competition\/2624/);
+});
+test("Innovate UK follows the next link, deduplicates competitions and caps requests",async()=>{
+ const visited:string[]=[];
+ const competition=(id:number)=>`<a href="/competition/${id}/overview/0d597772-a841-4b82-ab80-51c09cda2206">Competition ${id}</a><dl class="date-definition-list"><dt>Opened:</dt><dd>24 November 2026</dd><dt>Closes:</dt><dd>20 January 2027</dd></dl>`;
+ const rows=await sources["Innovate UK"](at,async (url,init)=>{
+  assert.equal(new Headers(init?.headers).get("accept"),"text/html");
+  const parsed=new URL(url);
+  visited.push(parsed.origin+parsed.pathname);
+  const index=Number(parsed.searchParams.get("page")??0);
+  return competition(1)+competition(index+2)+`<a href="?page=${index+1}" rel="next">Next</a>`;
+ });
+ assert.equal(visited.length,5);
+ assert.ok(visited.every(url=>url==="https://apply-for-innovation-funding.service.gov.uk/competition/search"));
+ assert.deepEqual(rows.map(row=>row.id),[1,2,3,4,5,6].map(id=>`innovate-uk-${id}`));
 });
 test("award and contribution amounts retain currency and evidence semantics",()=>{
  const [nsf]=nsfFacts({response:{award:[{id:"7",title:"SBIR",fundsObligatedAmt:"250,000",date:"11/20/2026"}]}},at);
