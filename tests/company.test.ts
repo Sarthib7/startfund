@@ -20,6 +20,18 @@ test("company analysis obeys crawler-specific path rules and infers editable pub
  assert.equal(german.name,"1KOMMA5°");
  assert.equal(german.region,"DE");
 });
+test("robots wildcard rules match literal path segments with bounded input",()=>{
+ const policy="User-agent: *\nDisallow: /a*aba*ab$\nDisallow: /literal?file[1].txt$\nDisallow: /tie$\nAllow: /tie$";
+ assert.equal(robotsAllows(policy,"/aXababaYab"),false);
+ assert.equal(robotsAllows(policy,"/aXababaYab/more"),true);
+ assert.equal(robotsAllows(policy,"/aabab"),true);
+ assert.equal(robotsAllows(policy,"/literal?file[1].txt"),false);
+ assert.equal(robotsAllows(policy,"/literalXfile1.txt"),true);
+ assert.equal(robotsAllows(policy,"/tie"),true);
+ assert.equal(robotsAllows("User-agent: *\nDisallow: /"+"a*".repeat(1024)+"b$", "/"+ "a".repeat(4096)),true);
+ assert.equal(robotsAllows("User-agent: *\n"+"Disallow: /other\n".repeat(513),"/"),false);
+ assert.equal(robotsAllows("User-agent: *\n#"+"x".repeat(512*1024),"/"),false);
+});
 test("company reader checks robots again at the redirected host and accepts successful HTML",async()=>{
  const calls:string[]=[];
  const read=async(url:URL)=>{
