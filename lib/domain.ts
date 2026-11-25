@@ -144,6 +144,10 @@ function horizonLocation(o:Opportunity,countries:string[]) {
   return countries.some(code=>horizonAssociated.has(code) && !(code==="GB" && equityOnly) ||
     cluster && horizonPillarTwoAssociated.has(code));
 }
+export function opportunityLocation(o:Opportunity) {
+  const codes=o.subdivisions?.length ? o.subdivisions : o.countries;
+  return codes?.length ? `${o.kind==="Tender"?"Place of performance":"Program location"}: ${codes.join(", ")}` : undefined;
+}
 function regionalNote(o: Opportunity, locations:ReturnType<typeof profileLocations>) {
   const text = o.eligibility ?? "";
   const restriction = text.match(/\b(UK|United Kingdom|EU|European Union|US|U\.S\.|United States)[- ](?:based[- ]only|only)\b|\bonly\s+(UK|United Kingdom|EU|European Union|US|U\.S\.|United States)\b/i);
@@ -153,8 +157,7 @@ function regionalNote(o: Opportunity, locations:ReturnType<typeof profileLocatio
     o.countries?.length ? o.countries.some(c=>locations.countries.includes(c)) :
     region==="EU" ? locations.eu || (!label && horizonLocation(o,locations.countries)) : locations.countries.includes(region==="UK"?"GB":region);
   return { local, restricted:region!=="Global" || Boolean(o.countries?.length), note: !local && region !== "Global" ?
-    o.countries?.length ? `Place of performance: ${o.countries.join(", ")}` :
-    label ? `${region}-only per source; outside your region` : `${region} call; check eligibility for your region` : undefined };
+    opportunityLocation(o) ?? (label ? `${region}-only per source; outside your region` : `${region} call; check eligibility for your region`) : undefined };
 }
 export function listingStatus(o:Opportunity,asOf=new Date().toISOString()):ListingStatus {
   const day=asOf.slice(0,10);

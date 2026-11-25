@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { demo, profileSchema, rank } from "../lib/domain";
+import { demo, opportunityLocation, profileSchema, rank } from "../lib/domain";
 import { parseUkGovernmentGrants, sources } from "../lib/sources";
 
 const at="2026-11-25T12:00:00Z";
@@ -54,6 +54,8 @@ test("curated programs use country or exact subdivision from either company or d
  assert.ok(!ids({companyCountry:"FR"}).includes("fr-innovup"));
  const india=ids({companySubdivision:"IN-KA"});
  assert.ok(india.includes("in-seed-fund") && india.includes("in-elevate") && !india.includes("in-ksum"));
+ assert.equal(opportunityLocation(programs.find(r=>r.id==="in-elevate")!),"Program location: IN-KA");
+ assert.equal(opportunityLocation(programs.find(r=>r.id==="in-seed-fund")!),"Program location: IN");
  const scotland=ids({companyCountry:"UK",companySubdivision:"GB-SCT"});
  assert.ok(scotland.includes("gb-scot-scale") && !scotland.includes("gb-wales-smart"));
  assert.equal(profileSchema.safeParse({...demo,companyCountry:"FR",companySubdivision:"US-CA"}).success,false);

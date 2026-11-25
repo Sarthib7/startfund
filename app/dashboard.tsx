@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { kinds, listingStatus, regions, type Profile, type Radar, type Match, type Opportunity } from "../lib/domain";
+import { kinds, listingStatus, opportunityLocation, regions, type Profile, type Radar, type Match, type Opportunity } from "../lib/domain";
 import { digestHtml } from "../lib/digest";
 
 type Draft={why:string;subject:string;body:string;mode:string};
@@ -150,7 +150,7 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
       <button className="rowtitle" onClick={()=>choose(m)}>{m.title} <span aria-hidden>›</span></button>
       <div className="rowmeta">{m.opensAt&&listingStatus(m)==="Forthcoming"&&<span>Opens {formatDate(m.opensAt)}</span>}
        {m.deadline&&<span>{dueLabel(m)} {formatDate(m.deadline)}</span>}{m.noticeExpires&&<span>Notice expires {formatDate(m.noticeExpires)}</span>}
-       {m.amount&&<span>Award ceiling {money(m.amount,m)}</span>}{m.countries?.length?<span>Place of performance: {m.countries.join(", ")}</span>:null}<a href={m.url} target="_blank" rel="noreferrer">Source ↗</a>
+       {m.amount&&<span>Award ceiling {money(m.amount,m)}</span>}{opportunityLocation(m)&&<span>{opportunityLocation(m)}</span>}<a href={m.url} target="_blank" rel="noreferrer">Source ↗</a>
       </div>{m.regionNote&&<small className="warning">{m.regionNote}</small>}{m.prerequisites?.length?<small className="warning"> {m.prerequisites.join(" · ")}</small>:null}
       {m.kind==="Perks"&&<p className="rowmeta">{m.eligibility}</p>}
      </div><div className="score"><b>{m.score}%</b><span>FIT</span></div></li>)}</ul>
