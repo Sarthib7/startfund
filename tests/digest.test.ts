@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { demo } from "../lib/domain";
-import { confirmSubscription, digestSubscription, requestSubscription, save, unsubscribeDigest } from "../lib/store";
+import { confirmSubscription, digestSubscription, requestSubscription, save, saved, subscriptions, unsubscribeDigest, updateDigest } from "../lib/store";
 import { weekly } from "../lib/weekly";
 
 test("saving an allowlisted email and requesting confirmation do not enable weekly delivery",async t=>{
@@ -24,6 +24,14 @@ test("saving an allowlisted email and requesting confirmation do not enable week
  assert.equal(confirmSubscription(confirm),true);
  assert.equal(confirmSubscription(confirm),false);
  assert.equal(digestSubscription(id),"subscribed");
+ const [{version}]=subscriptions();
+ const oldDate=Date.now()+1000;
+ const now=t.mock.method(Date,"now",()=>oldDate);
+ const fresh={matches:[],warnings:[],scannedAt:"2026-11-26T12:00:00Z"};
+ save(id,{...demo,email,sector:"Updated sector"},fresh);
+ now.mock.restore();
+ assert.equal(updateDigest(id,{...fresh,scannedAt:"2026-11-25T12:00:00Z"},version),false);
+ assert.deepEqual(saved(id)?.digest,fresh);
  assert.equal(unsubscribeDigest(unsubscribe),true);
  await weekly();
  assert.equal(fetchMock.mock.callCount(),0);

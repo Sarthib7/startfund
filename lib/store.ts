@@ -132,7 +132,7 @@ export function saved(id:string){
   return row ? {profile:JSON.parse(row.data) as Profile,digest:row.digest ? JSON.parse(row.digest) as Radar : null} : null;
 }
 export function save(id:string,p:Profile,digest:Radar){
-  db().prepare("INSERT INTO profiles (id,data,digest,updated) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,digest=excluded.digest,updated=excluded.updated").run(id,JSON.stringify(p),JSON.stringify(digest),new Date().toISOString());
+  db().prepare("INSERT INTO profiles (id,data,digest,updated) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,digest=excluded.digest,updated=excluded.updated").run(id,JSON.stringify(p),JSON.stringify(digest),new Date(Date.now()).toISOString());
 }
 const tokenHash=(token:string)=>createHash("sha256").update(token).digest("hex");
 export function digestSubscription(id:string) {
@@ -157,13 +157,16 @@ export function unsubscribeDigest(token:string) {
   return db().prepare("DELETE FROM digest_subscriptions WHERE unsubscribe=?").run(token).changes>0;
 }
 export function subscriptions(){
-  return db().prepare(`SELECT p.id,p.data,s.sent,s.email,s.unsubscribe FROM profiles p JOIN digest_subscriptions s
+  return db().prepare(`SELECT p.id,p.data,p.updated,s.sent,s.email,s.unsubscribe FROM profiles p JOIN digest_subscriptions s
     ON p.id=s.profile_id WHERE s.confirmed IS NOT NULL`).all()
     .map(row=>({id:String(row.id),profile:JSON.parse(String(row.data)) as Profile,sent:row.sent ? String(row.sent) : null,
-      email:String(row.email),unsubscribe:String(row.unsubscribe)}));
+      email:String(row.email),unsubscribe:String(row.unsubscribe),version:String(row.updated)}));
 }
-export function updateDigest(id:string,digest:Radar){
-  db().prepare("UPDATE profiles SET digest=? WHERE id=?").run(JSON.stringify(digest),id);
+export function updateDigest(id:string,digest:Radar,version:string){
+  return db().prepare("UPDATE profiles SET digest=? WHERE id=? AND updated=?").run(JSON.stringify(digest),id,version).changes>0;
+}
+export function canDeliverDigest(id:string,unsubscribe:string){
+  return Boolean(db().prepare("SELECT 1 FROM digest_subscriptions WHERE profile_id=? AND unsubscribe=? AND confirmed IS NOT NULL").get(id,unsubscribe));
 }
 export function markSent(id:string,week:string){
   db().prepare("UPDATE digest_subscriptions SET sent=? WHERE profile_id=?").run(week,id);
