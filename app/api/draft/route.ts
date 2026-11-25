@@ -48,7 +48,7 @@ export async function POST(request:Request){
  const id=(await cookies()).get("startfund-profile")?.value;
  const record=id ? saved(id) : null;
  const profile=record?.profile ?? demo;
- const snapshot=record?.digest ?? await radar(profile);
+ const snapshot=record?.digest?.evidence ? record.digest : await radar(profile);
  const match=snapshot.matches.find(m=>m.id===input.data.id);
  if(!match) return Response.json({error:"Listing not found. Scan again."},{status:404});
  const clientId=record && id ? process.env.VERCEL==="1" ? request.headers.get("x-vercel-forwarded-for") ?? id : id : null;
