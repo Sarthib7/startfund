@@ -119,7 +119,9 @@ export async function catalog(query:{q?:string; source?:string; limit?:number}={
   return {
     opportunities:opportunities.flatMap(x=>x.items).filter(x=>!x.signal && (!x.deadline||x.deadline>=new Date().toISOString().slice(0,10)) && isMatch(x.title+" "+(x.eligibility??""))).slice(0,limit),
     evidence:store.prepare("SELECT data FROM evidence ORDER BY rowid DESC").all().map(row=>JSON.parse(String(row.data)) as Fact).filter(x=>filter(x.source)&&isMatch(x.entity+" "+x.title)).sort((a,b)=>(b.observed??"").localeCompare(a.observed??"")).slice(0,limit),
-    signals:store.prepare("SELECT data FROM signals ORDER BY observed DESC LIMIT 250").all().map(row=>JSON.parse(String(row.data)) as Signal).filter(x=>filter(x.source)&&isMatch(x.title)).slice(0,limit),
+    signals:store.prepare(`SELECT data FROM signals WHERE (?1 IS NULL OR source=?1)
+      AND instr(lower(json_extract(data,'$.title')),?2)>0 ORDER BY observed DESC LIMIT ?3`)
+      .all({"?1":query.source??null,"?2":term,"?3":limit}).map(row=>JSON.parse(String(row.data)) as Signal),
     warnings,
   };
 }
