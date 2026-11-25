@@ -44,7 +44,7 @@ test("grant evidence matches core sectors, not disbursements, clinical labels or
 test("Grants.gov normalizes rolling and stale notices and decodes title entities",()=>{
  const [rolling,stale,expired]=parseUs({errorcode:0,data:{oppHits:[
   {id:"41",title:"Law &amp; Science &ndash; rolling",closeDate:"10/15/2076"},
-  {id:"42",title:"EONS 2018",postDate:"05/01/2018"},
+  {id:"42",title:"EONS 2018",openDate:" 02/22/2018 "},
   {id:"43",title:"Expired",closeDate:"05/22/2018"},
  ]}},at);
  assert.equal(rolling.title,"Law & Science – rolling");
@@ -163,6 +163,36 @@ test("the top ten still include climate grants and parent NIH awards with real s
  const biotechTop=top(biotech);
  assert.ok(["nsf-seed","nih-sbir","nih-sttr"].every(id=>biotechTop.includes(id)));
  assert.ok(!biotechTop.includes("nasa"));
+});
+test("pre-seed biomedical startups see company-eligible mechanisms before research and training",()=>{
+ const listing=(id:string,title:string,eligibility?:string):Opportunity=>({...grant,id,title,
+   description:"Developing diagnostics, biotechnology, medical devices, and therapeutics",eligibility:eligibility??null});
+ const rows=[
+  listing("parent-sbir","NIH Parent Small Business Innovation Research (SBIR R43/R44)"),
+  listing("parent-sttr","NIH Parent Small Business Technology Transfer (STTR R41/R42)"),
+  ...curatedProgramRows(at).filter(row=>row.id==="nsf-seed"),
+  listing("small-business","Commercialization award","Small businesses may apply."),
+  listing("r21","Exploratory research (R21)"),
+  listing("r03","Small Research Grant (R03)"),
+  listing("u01","Cooperative research agreements (U01)"),
+  listing("f31","Predoctoral fellowships (F31)"),
+  listing("k99","Pathway to Independence (K99/R00)"),
+  listing("t15","Institutional award (T15)"),
+  listing("institution","Diagnostic development","Only research institutions may apply."),
+  listing("excluded","Diagnostic award for organizations","Small businesses are not eligible."),
+  listing("irrelevant","SBIR for bridge inspections"),
+ ];
+ rows.find(row=>row.id==="irrelevant")!.description="Inspections of roadway infrastructure";
+ const favored=["parent-sbir","parent-sttr","nsf-seed","small-business"];
+ for(const sector of ["Biotechnology","Medtech"]){
+  const profile={...demo,sector,description:"We build diagnostics and medical devices for healthcare.",needs:["Grant"] as typeof demo.needs};
+  const matches=rank(rows,profile,Date.parse(at));
+  assert.deepEqual(matches.slice(0,4).map(row=>row.id).sort(),[...favored].sort());
+  assert.match(matches.find(row=>row.id==="r21")!.reason,/Research mechanism/);
+  assert.match(matches.find(row=>row.id==="t15")!.reason,/Training or career-development/);
+  assert.match(matches.find(row=>row.id==="institution")!.reason,/Institution-only eligibility/);
+  assert.ok(["institution","excluded","irrelevant"].every(id=>!shortlist(matches).some(row=>row.id===id)));
+ }
 });
 test("profile queries expand energy and manufacturing without sending the name or email",()=>{
  const queries=profileQueries({...demo,email:"founder@example.com"});

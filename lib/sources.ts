@@ -7,6 +7,7 @@ import { curatedProgramRows } from "./programs";
 import { post, reader, type Reader } from "./transport";
 const str = z.string().min(1);
 const date = (value?: string) => {
+  value=value?.trim();
   const m = value?.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   const iso = m ? `${m[3]}-${m[1]}-${m[2]}` : value?.slice(0,10);
   return iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) && Number.isFinite(Date.parse(iso)) && new Date(iso).toISOString().slice(0,10) === iso ? iso : null;
@@ -18,7 +19,7 @@ const cash = (v: unknown) => {
 function safeUrl(v: string) {
   try { const u = new URL(v); return u.protocol === "https:" || u.protocol === "http:" ? u.href : null; } catch { return null; }
 }
-const usRow = z.object({id: z.string().regex(/^\d+$/), title: str, agencyCode:z.string().optional(),closeDate: z.string().nullish(),postDate:z.string().nullish(),oppStatus:z.string().optional()});
+const usRow = z.object({id: z.string().regex(/^\d+$/), title: str, agencyCode:z.string().optional(),closeDate: z.string().nullish(),openDate:z.string().nullish(),postDate:z.string().nullish(),oppStatus:z.string().optional()});
 const detailsSchema = z.object({data:z.object({synopsis:z.object({
   awardCeiling:z.unknown(),awardFloor:z.unknown(),estimatedFunding:z.unknown(), applicantEligibilityDesc:z.string().nullish(), synopsisDesc:z.string().nullish(),
 })})});
@@ -53,7 +54,7 @@ export function parseUs(raw: unknown, fetchedAt: string): Opportunity[] {
   return items.data.oppHits.flatMap(rawRow => {
     const {data:r} = usRow.safeParse(rawRow);
     if(!r || (r.oppStatus && r.oppStatus!=="posted") || /^(?:rfi\b|request for information\b|noi\b|notice of intent\b)/i.test(r.title))return [];
-    const title=cleanText(r.title,600)??r.title, today=fetchedAt.slice(0,10), postedAt=date(r.postDate??undefined)??undefined;
+    const title=cleanText(r.title,600)??r.title, today=fetchedAt.slice(0,10), postedAt=date(r.postDate??undefined)??date(r.openDate??undefined)??undefined;
     const closes=date(r.closeDate??undefined), cutoff=new Date(fetchedAt);
     cutoff.setUTCFullYear(cutoff.getUTCFullYear()-2);
     const rolling=Boolean(closes&&Number(closes.slice(0,4))>Number(today.slice(0,4))+10) || /accepted (?:at any time|anytime)|rolling/i.test(r.closeDate??"");
