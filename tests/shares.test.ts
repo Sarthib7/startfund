@@ -2,8 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { POST as share } from "../app/api/share/route";
+import { POST as scan } from "../app/api/radar/route";
 import { createShare, getShare } from "../lib/shares";
-import { save } from "../lib/store";
+import { completedRadar, save } from "../lib/store";
+import { usageIdentity } from "../lib/usage";
 import { demo, type Match } from "../lib/domain";
 
 process.env.RADAR_DB_PATH=":memory:";
@@ -37,4 +39,27 @@ test("sharing requires the displayed scan ID to match the visitor's saved result
  assert.equal(response.status,201);
  const snapshot=await getShare((await response.json()).path.split("/").at(-1));
  assert.equal(snapshot?.company.name,demo.name);
+});
+
+test("a renamed company on a scan cache hit gets a distinct share ID and snapshot name",async t=>{
+ const now=Date.now()+60_000;
+ t.mock.method(Date,"now",()=>now);
+ const origin="https://example.org";
+ const identity=await usageIdentity(new Request(origin));
+ assert.ok(identity?.cookie);
+ const cookie=[identity.cookie.split(";")[0],`startfund-profile=${randomUUID()}`].join("; ");
+ const send=(path:string,body:unknown)=>new Request(origin+path,{method:"POST",
+  headers:{"content-type":"application/json",cookie},body:JSON.stringify(body)});
+ const before={...demo,name:"Old name"},after={...before,name:"New name"};
+ const cached={matches:[],warnings:[],scannedAt:new Date(now).toISOString()};
+ await completedRadar(before,identity.actor,async()=>cached);
+ const first=await (await scan(send("/api/radar",before))).json();
+ const second=await (await scan(send("/api/radar",after))).json();
+ assert.equal(first.scannedAt,cached.scannedAt);
+ assert.equal(second.scannedAt,cached.scannedAt);
+ assert.notEqual(first.scanId,second.scanId);
+ const result=await share(send("/api/share",{scanId:second.scanId}));
+ assert.equal(result.status,201);
+ const snapshot=await getShare((await result.json()).path.split("/").at(-1));
+ assert.equal(snapshot?.company.name,after.name);
 });

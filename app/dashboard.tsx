@@ -154,7 +154,7 @@ export default function Dashboard({initialProfile,initialRadar,initialSample}:{i
      <div className="section-kicker">02 / DISCOVER</div><div className="result-title"><h2>{shownBundle?"Free builder bundle":"Ranked opportunities"}</h2><span className="muted" aria-live="polite">{resultCount} {shownBundle?"perks":"matches"}</span></div>
      <p className="meta">For {saved.name} <span>·</span> Scanned {formatDate(radar.scannedAt)} UTC</p>
      {!shownBundle&&<ReportSummary score={radar.matches.length?Math.max(...radar.matches.map(m=>m.score)):null} total={radar.matches.length}/>}
-     <div className="action-strip">{!sample&&radar.scanId&&<ShareControls key={radar.scannedAt} scanId={radar.scanId}/>}<SuggestOpportunity/></div>
+     <div className="action-strip">{!sample&&radar.scanId&&<ShareControls key={radar.scanId} scanId={radar.scanId}/>}<SuggestOpportunity/></div>
      {!shownBundle&&<MatchAnalytics radar={radar}/>}
      <nav className="filters" aria-label="Filter opportunities">{(["All",...kinds] as const).map(x=><button type="button" key={x} className={filter===x?"selected":""} aria-pressed={filter===x} onClick={()=>setFilter(x)}>{x==="All"?x:names[x]}</button>)}</nav>
      {radar.warnings.length>0&&<p className="warning">{radar.warnings.join(" · ")}</p>}
