@@ -26,8 +26,8 @@ VERIFIED: `gh pr checks 10` showed the remote Vercel check as failed for PR10. V
 VERIFIED: in `devin/release-integration`, `RADAR_DB_PATH=:memory: npm test` finished with:
 
 ```text
-tests 90
-pass 90
+tests 91
+pass 91
 fail 0
 ```
 
@@ -44,6 +44,8 @@ VERIFIED: a local production server passed these smoke checks:
 - `/s/not-a-real-share` without a beta session returned 404, not a login redirect.
 - An MCP-style update request with `type=market.signal&limit=1` returned 200, an empty `events` array, and `hasMore:true`. This is documented scan-cursor behavior, not a failed request.
 
+VERIFIED: after the landing-page change, `/` returned 200 without a beta session, `/app` redirected to `/login?next=%2Fapp`, a waitlist POST returned 201 `{"state":"joined"}`, and the operator waitlist API returned 200 with the stored email. Brave desktop and mobile screenshots showed the refined landing page.
+
 VERIFIED in Brave: the login page invite field now uses the full form width. The catalog renders the Folio Turn brand and shows 5 direct open-source apply-now possibilities plus 15 startup-dependent apply-now possibilities. These are tracked curated rows only. They are not a total market count.
 
 ## Product decisions now implemented
@@ -54,6 +56,7 @@ VERIFIED in Brave: the login page invite field now uses the full form width. The
 - Shared `/s/` report pages and their image routes remain public during beta.
 - API requests with bearer credentials pass the beta proxy, then each endpoint validates the credential. The proxy does not validate the key itself.
 - Agent update requests use the separate `agent_updates` quota. Pro keys get 500 requests per UTC day and an 8-per-minute burst limit.
+- The public root is now a waitlist landing page. The interactive radar moved to `/app`. Waitlist signups store email and creation time only.
 
 ## Agent update contract
 
