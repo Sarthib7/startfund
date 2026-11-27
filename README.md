@@ -18,6 +18,14 @@ Open http://localhost:3100. Requires Node.js 24+. Use `npm run dev` for developm
 3. Set `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` for Production, and for Preview if you also want branch deployments (prefer a separate database for previews). Startfund creates its tables on first use. It does not fall back to ephemeral SQLite on Vercel; existing local data is not migrated.
 4. Deploy production and verify the production URL is accessible in a private browser without Vercel login; configure [Deployment Protection](https://vercel.com/docs/deployment-protection) as needed. `RADAR_SOURCE_CONTACT` enables SEC evidence. Model and Resend credentials are optional; the default public deployment uses template drafts and has no email delivery. Set `RADAR_EVE_URL` to the production origin if enabling model drafts, and use that origin for `RADAR_PUBLIC_ORIGIN` if enabling digest subscriptions.
 
+### Invite beta access
+
+The beta deployment requires a signed beta session for browser pages and most API routes. Operators generate one-time invite codes from `/admin/sign-in` with `RADAR_ADMIN_TOKEN`. Invite codes expire after 30 days. Beta sessions expire after 7 days.
+
+Set `RADAR_AUTH_SECRET` before using the beta gate. `RADAR_USAGE_SECRET` is a supported fallback, but a dedicated secret is safer to rotate. Sessions are stateless. Rotation revokes all beta sessions; individual session revocation is not available in this version.
+
+Shared report URLs under `/s/` remain public. They are read-only snapshots and do not include email addresses or profile notes. The Stripe webhook, login routes, static assets, and invite redemption route also remain reachable. API clients still authenticate at each endpoint. The beta proxy does not accept a bearer key by itself.
+
 ### Plans and usage
 
 - Free visitors get 5 scans and 3 drafts per UTC day. Catalog browsing has no daily quota; the catalog API and MCP share a short per-network burst limit. Expensive requests also share a deployment-wide daily cap. Set `RADAR_GLOBAL_DAILY_LIMIT` to override the default cap of 1000. Usage is aggregated daily and retained for about 35 days.
