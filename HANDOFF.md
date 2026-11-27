@@ -1,47 +1,94 @@
 # Startfund handoff
 
-## State
+## Canonical local tree
 
-VERIFIED: production `https://startfund.ironvale.llc/` serves the older pre-brand build. The new brand, invite beta gate, and agent updates feed are not deployed yet.
+VERIFIED: `devin/release-integration` is the canonical local release-candidate branch. It merges these local branches:
 
-VERIFIED: local production build passes with Next.js 16.4.6. Final command output ended with `BUILD_EXIT:0`.
+- `devin/premium-brand` at `4455cfb`, Folio Turn brand assets.
+- `devin/invite-beta-access` at `34feeab`, invite beta access and beta documentation.
+- `devin/agent-updates` at `8d68b82`, durable agent update journal.
+- `devin/innovate-date-fix` at `965460c`, timezone-independent Innovate UK date parsing.
+- `devin/open-source-programs` at `ef95755`, open-source and startup program paths.
+- `devin/test-workflow` at `c2177ac`, pull-request test, typecheck, and build workflow.
 
-VERIFIED: `npm test` reports `tests 78`, `pass 76`, `fail 2`. The two failures are pre-existing Innovate UK issues: `tests/radar.test.ts:360` parses `2027-01-19` instead of `2027-01-20`; `tests/regional-grants.test.ts:95` returns `2` instead of `1`.
+VERIFIED: no push, merge into `main`, deployment, or external publication has been performed in this session.
 
-VERIFIED: invite login local flow returned these results: valid redeem `200`, root with session `200`, reuse `401`, authenticated catalog API `200`. The implementation uses one-time invite codes, SHA-256 code hashes, signed HttpOnly sessions, and the persistent usage signing key when `RADAR_AUTH_SECRET` is absent.
+VERIFIED: `/Volumes/Sarthi MAC/OSS/startfund` is not the canonical clean tree. It still has uncommitted duplicate brand and date-fix work plus untracked local artifacts. Use `/Volumes/Sarthi MAC/OSS/startfund-release-integration` for release verification.
 
-VERIFIED: the agent updates feed has focused tests passing. It exposes `GET /api/agent/updates` and MCP tool `get_funding_updates`.
+## Production state
 
-## Selected brand direction
+VERIFIED: `https://startfund.ironvale.llc/` returned HTTP 200 on 2026-11-27. The HTML contained `Funding that fits` and did not contain `Enter your invite code`. This supports the earlier report that production still serves the older public pre-beta build. This check does not identify the exact deployed commit.
 
-Capital Table is the selected direction. The mark is an arched private room with a brass table line. It represents access to capital, founder-investor connection, and trusted records. The weaker first-round options were Signal Sweep, Source Lattice, and Startline S. They were too technical or generic for the premium positioning.
+VERIFIED: `gh pr checks 10` showed the remote Vercel check as failed for PR10. The local beta branch now has fixes that the remote branch lacks. INFERRED: the old remote failure was caused by the committed beta tests no longer matching the implementation during production typechecking. This inference must be confirmed by pushing and rerunning checks.
 
-Relevant files:
+## Verification evidence
 
-- `.brand-preview/index.html` is the local review page. It is not intended as a production asset.
-- `app/brand-mark.tsx`, `app/icon.svg`, `app/icon.png`, `app/apple-icon.png`, `app/favicon.ico`, and `public/brand/*` are production assets.
+VERIFIED: in `devin/release-integration`, `RADAR_DB_PATH=:memory: npm test` finished with:
 
-## Remaining work
+```text
+tests 90
+pass 90
+fail 0
+```
 
-1. Review and merge the small PRs in this order: premium brand, agent updates, invite beta access.
-2. Deploy the merged result to `startfund.ironvale.llc` through the existing Vercel project `teleshops-projects/startfund`.
-3. Configure `RADAR_AUTH_SECRET` in production before relying on beta sessions. `RADAR_USAGE_SECRET` is already configured, but a dedicated secret is cleaner.
-4. Decide whether shared `/s/[id]` pages should remain behind the beta gate. They are currently gated.
-5. Fix the two pre-existing Innovate UK tests in a separate PR.
-6. Consider database-backed session revocation before opening the beta broadly. The current signed session is suitable for a small private beta but cannot revoke one session independently.
+VERIFIED: `npx tsc --noEmit` exited 0.
 
-## Security notes
+VERIFIED: `npm run build` exited 0. The route list included `/api/agent/updates`.
 
-- Invite codes are stored only as SHA-256 hashes.
-- Codes are one-time use and expire after 30 days.
-- Sessions expire after 14 days.
-- Redemption is usage-metered through the `auth` action.
-- Admin invite generation is behind `RADAR_ADMIN_TOKEN`.
-- Stripe webhook `/api/billing/webhook` remains public.
-- API requests with bearer credentials pass the beta proxy and are still authenticated by their endpoint.
+VERIFIED: a local production server passed these smoke checks:
 
-## Local artifacts not intended for product PRs
+- `/api/agent/updates` without a bearer key returned 401 `Authentication required.` from the beta proxy.
+- The same route with an invalid bearer key returned 401 `Invalid API key.`
+- The same route with a valid operator key returned 200 and a JSON update page.
+- `/catalog` without a beta session redirected to `/login` with status 307.
+- `/s/not-a-real-share` without a beta session returned 404, not a login redirect.
+- An MCP-style update request with `type=market.signal&limit=1` returned 200, an empty `events` array, and `hasMore:true`. This is documented scan-cursor behavior, not a failed request.
 
-- `agent/skills/` is local design-skill tooling.
-- `.brand-preview/` contains design exploration output, including subagent laboratory files.
-- `AGENTS.md` was generated by `next dev` and can be kept or removed in a separate cleanup.
+VERIFIED in Brave: the login page invite field now uses the full form width. The catalog renders the Folio Turn brand and shows 5 direct open-source apply-now possibilities plus 15 startup-dependent apply-now possibilities. These are tracked curated rows only. They are not a total market count.
+
+## Product decisions now implemented
+
+- Folio Turn is the implemented brand direction. SVG and binary icon assets were regenerated.
+- Invite codes are one-time use and expire after 30 days.
+- Beta sessions expire after 7 days. They are stateless. Rotating `RADAR_AUTH_SECRET` revokes all sessions. Individual session revocation is not available.
+- Shared `/s/` report pages and their image routes remain public during beta.
+- API requests with bearer credentials pass the beta proxy, then each endpoint validates the credential. The proxy does not validate the key itself.
+- Agent update requests use the separate `agent_updates` quota. Pro keys get 500 requests per UTC day and an 8-per-minute burst limit.
+
+## Agent update contract
+
+VERIFIED: `signal_events` is an append-only SQLite journal with durable `seq` values. Existing `signals` rows are backfilled once in old `rowid` order. Insert and update triggers append immutable copies.
+
+VERIFIED: a market-signal update appends a new journal event. A refresh that only changes `fetchedAt` does not append an event.
+
+The public cursor is the sequence of the last scanned journal row. Rows hidden by `type`, malformed rows, and rows with unsafe URLs still advance the cursor. `hasMore` means another unscanned journal row exists. It does not promise a matching event. This contract is documented in `README.md` and in the MCP tool description.
+
+LIMITATION: the remote Turso/libsql path was not exercised. Verification used local SQLite and temporary SQLite files. libsql supports SQLite triggers and JSON functions, but production migration still needs a smoke test after deploy.
+
+## Open-source program evidence
+
+VERIFIED: the catalog implementation separates direct open-source opportunities from startup-dependent opportunities. Only open, rolling, and late-application rows count. Credits keep `amount:null` because credits are not cash.
+
+REPORTED: prior official-source research found the xAI startup program active and documented venture backing and live-product requirements. VERIFIED in this session: direct `webfetch` and Brave access to `x.ai/startups` were blocked by Cloudflare, while web search results for the official `x.ai/startups` and `x.ai/startups/apply` pages showed active application text. Treat the Grok row as lower-confidence than rows whose official pages were directly fetched. Do not silently treat absence of access as evidence that the program is closed.
+
+## Merge risks
+
+1. `devin/open-source-programs` conflicts with the premium catalog page. The release branch resolves the conflict by keeping both `BrandMark` and `sourceRows` imports.
+2. `devin/agent-updates` conflicts with invite beta access in `lib/plans.ts` and `lib/usage.ts`. The release branch resolves the conflict by keeping both `auth` and `agent_updates` quota entries.
+3. PR10 is stacked on `devin/premium-brand`. If PR9 is squash-merged, regenerate or rebase the invite branch before merging it. Otherwise overlapping brand changes can become real conflicts.
+4. The exact verified tree is `devin/release-integration`. Merging the independent branches one by one requires the same conflict resolutions.
+
+## Remaining release gates
+
+1. Choose release mechanics: one release-candidate PR from `devin/release-integration`, or updated stacked PRs with manual conflict resolution.
+2. Push branches only after explicit user approval.
+3. Create or update PRs, then inspect the test workflow and Vercel checks.
+4. Configure production secrets before deployment. At minimum verify `RADAR_AUTH_SECRET`, `RADAR_USAGE_SECRET`, `RADAR_ADMIN_TOKEN`, `TURSO_DATABASE_URL`, and `TURSO_AUTH_TOKEN`.
+5. Verify Vercel Deployment Protection and the intended Stripe mode before exposing checkout.
+6. Deploy only after explicit user approval, then smoke test login, catalog, shared reports, agent updates, MCP access, and the Turso journal migration.
+
+## Local artifacts
+
+- `.brand-preview/` and `agent/skills/` are local artifacts in the main worktree. They are not release inputs.
+- `node_modules` in some secondary worktrees is a symlink. Tests can use it, but Turbopack production builds require a real local `node_modules` copy.
+- `AGENTS.md` is generated by `next dev` in some worktrees. It is not part of the release candidate.
