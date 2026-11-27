@@ -48,6 +48,14 @@ VERIFIED: after the landing-page change, `/` returned 200 without a beta session
 
 VERIFIED in Brave: the login page invite field now uses the full form width. The catalog renders the Folio Turn brand and shows 5 direct open-source apply-now possibilities plus 15 startup-dependent apply-now possibilities. These are tracked curated rows only. They are not a total market count.
 
+VERIFIED: after the dashboard, marquee, and login refinement, `RADAR_DB_PATH=:memory: npm test` finished with `tests 91`, `pass 91`, and `fail 0`; `npx tsc --noEmit` exited 0; `npm run build` exited 0.
+
+VERIFIED in Brave: `/app` showed a fixed desktop sidebar, dashboard metrics, and ranked-opportunity analytics. `/` showed the graphite program marquee. Browser evaluation returned animation name `logo-scroll`, `scrollWidth:1440`, and `innerWidth:1440`. This verifies the animation name and absence of horizontal page overflow at that viewport. It does not verify visual motion over time.
+
+VERIFIED in Brave: `/login` showed the split desktop layout and stacked mobile layout. A lowercase compact local invite was pasted into the field, formatted as `FAQP-3SR7-F9RD-BNBA`, redeemed successfully, and reached `/app`. That invite is consumed and cannot be reused.
+
+VERIFIED: npm metadata for `simple-icons@16.38.0` reported license `CC0-1.0`. Selected icon path data is bundled locally in `app/program-icons.ts`. This verifies the package license metadata only. It does not verify trademark permission for production logo use.
+
 ## Product decisions now implemented
 
 - Folio Turn is the implemented brand direction. SVG and binary icon assets were regenerated.
@@ -57,6 +65,9 @@ VERIFIED in Brave: the login page invite field now uses the full form width. The
 - API requests with bearer credentials pass the beta proxy, then each endpoint validates the credential. The proxy does not validate the key itself.
 - Agent update requests use the separate `agent_updates` quota. Pro keys get 500 requests per UTC day and an 8-per-minute burst limit.
 - The public root is now a waitlist landing page. The interactive radar moved to `/app`. Waitlist signups store email and creation time only.
+- `/app` uses a fixed desktop sidebar and dashboard metric cards. Mobile keeps the compact top navigation.
+- The landing marquee uses monochrome graphite program marks. Bundled SVG paths are used where available. Other names use a monogram fallback.
+- The login page uses a split editorial layout. Invite input strips punctuation, uppercases letters, and formats sixteen characters as four groups of four.
 
 ## Agent update contract
 
