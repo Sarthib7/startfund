@@ -11,7 +11,9 @@ VERIFIED: `devin/release-integration` is the canonical local release-candidate b
 - `devin/open-source-programs` at `ef95755`, open-source and startup program paths.
 - `devin/test-workflow` at `c2177ac`, pull-request test, typecheck, and build workflow.
 
-VERIFIED: no push, merge into `main`, deployment, or external publication has been performed in this session.
+CORRECTED: an earlier revision of this handoff said no push had been performed. That was true before the small-PR update. VERIFIED: `git push origin devin/premium-brand devin/invite-beta-access devin/agent-updates devin/innovate-date-fix devin/open-source-programs devin/test-workflow devin/release-integration` exited 0. The push updated PR branches 8, 9, and 10 and created remote branches for PRs 11 through 14. No merge into `main`, production deployment, or external publication has been performed.
+
+VERIFIED: open pull requests are #8 agent updates, #9 Folio Turn brand, #10 invite beta access, #11 Innovate UK date parsing, #12 open-source program paths, #13 pull-request verification workflow, and #14 integrated release candidate.
 
 VERIFIED: `/Volumes/Sarthi MAC/OSS/startfund` is not the canonical clean tree. It still has uncommitted duplicate brand and date-fix work plus untracked local artifacts. Use `/Volumes/Sarthi MAC/OSS/startfund-release-integration` for release verification.
 
@@ -94,12 +96,11 @@ REPORTED: prior official-source research found the xAI startup program active an
 
 ## Remaining release gates
 
-1. Choose release mechanics: one release-candidate PR from `devin/release-integration`, or updated stacked PRs with manual conflict resolution.
-2. Push branches only after explicit user approval.
-3. Create or update PRs, then inspect the test workflow and Vercel checks.
-4. Configure production secrets before deployment. VERIFIED: `vercel env ls production --scope teleshops-projects --project startfund` lists `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `RADAR_ADMIN_TOKEN`, `RADAR_USAGE_SECRET`, `RADAR_SOURCE_CONTACT`, `TURSO_DATABASE_URL`, and `TURSO_AUTH_TOKEN`. It does not list `RADAR_AUTH_SECRET`. The command hides secret values, so this verifies names and environments only, not value correctness. Decide whether to add a dedicated `RADAR_AUTH_SECRET` or accept the documented `RADAR_USAGE_SECRET` fallback for the private beta.
-5. Verify Vercel Deployment Protection and the intended Stripe mode before exposing checkout.
-6. Deploy only after explicit user approval, then smoke test login, catalog, shared reports, agent updates, MCP access, and the Turso journal migration.
+1. Choose release mechanics: merge the small PRs in dependency order, or merge release-candidate PR #14 after review.
+2. Inspect final GitHub and Vercel checks before merge.
+3. Configure production secrets before deployment. VERIFIED: `vercel env ls production --scope teleshops-projects --project startfund` lists `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `RADAR_ADMIN_TOKEN`, `RADAR_USAGE_SECRET`, `RADAR_SOURCE_CONTACT`, `TURSO_DATABASE_URL`, and `TURSO_AUTH_TOKEN`. It does not list `RADAR_AUTH_SECRET`. The command hides secret values, so this verifies names and environments only, not value correctness. Decide whether to add a dedicated `RADAR_AUTH_SECRET` or accept the documented `RADAR_USAGE_SECRET` fallback for the private beta.
+4. Verify Vercel Deployment Protection and the intended Stripe mode before exposing checkout.
+5. Deploy only after explicit user approval, then smoke test login, catalog, shared reports, agent updates, MCP access, and the Turso journal migration.
 
 ## Local artifacts
 
