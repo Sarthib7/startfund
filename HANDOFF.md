@@ -19,7 +19,7 @@ VERIFIED: `/Volumes/Sarthi MAC/OSS/startfund` is not the canonical clean tree. I
 
 VERIFIED: `https://startfund.ironvale.llc/` returned HTTP 200 on 2026-11-27. The HTML contained `Funding that fits` and did not contain `Enter your invite code`. This supports the earlier report that production still serves the older public pre-beta build. This check does not identify the exact deployed commit.
 
-VERIFIED: `gh pr checks 10` showed the remote Vercel check as failed for PR10. The local beta branch now has fixes that the remote branch lacks. INFERRED: the old remote failure was caused by the committed beta tests no longer matching the implementation during production typechecking. This inference must be confirmed by pushing and rerunning checks.
+VERIFIED: `gh pr checks 10` showed the remote Vercel check as failed for PR10. VERIFIED: Vercel logs for deployment `dpl_FUwyeCGhSSYEVFex6FDmzBx8YGHZ`, commit `d4a3b5f`, show `tests/beta-auth.test.ts(9,38): error TS2345` and `tests/beta-auth.test.ts(18,106): error TS2339`, then `Failed to type check.` The local beta branch now has fixes that the remote branch lacks. The same logs show Node.js 26 because `package.json` allows `node: >=24`; local verification used Node.js `v24.19.0`.
 
 ## Verification evidence
 
