@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { BrandMark } from "./brand-mark";
 import { WaitlistForm } from "./waitlist-form";
+import { programIconPaths } from "./program-icons";
 
 const productCards=[
  {title:"Source-backed discovery",body:"Scan grants, tenders, investors, corporate programs, and open-source funding paths. Every match keeps a link back to its source."},
@@ -8,6 +9,7 @@ const productCards=[
  {title:"Agent-ready monitoring",body:"Track opportunity changes through the API and MCP feed. Weekly digests keep the shortlist current without another manual search."},
 ];
 const lanes=["Grants","Tenders","Investors","Open-source funding","Startup credits"];
+const programMarks=["Vercel","Devin","Grok","Databricks","PostHog","Datadog","MongoDB","Stripe","GitHub","Cloudflare","AWS","Google","Microsoft","NVIDIA","OpenAI","NLnet","Sovereign Tech","Techstars","Y Combinator"];
 
 export default function Landing(){
  return <div className="landing-shell">
@@ -21,6 +23,7 @@ export default function Landing(){
     <div className="landing-copy"><p className="eyebrow"><span className="live"/> PRIVATE BETA</p><h1>Find the funding your startup is missing.</h1></div>
     <div className="landing-aside"><p>Startfund scans public funding sources, ranks what fits your company, and prepares the first outreach. Builders see the evidence before they spend time applying.</p><div className="landing-cta"><a className="landing-button dark" href="#waitlist">Request access</a><Link className="landing-button light" href="/login?next=%2Fapp">Sign in</Link></div></div>
     <ul className="lane-strip" aria-label="Funding lanes">{lanes.map(lane=><li key={lane}>{lane}</li>)}</ul>
+    <div className="logo-marquee" aria-label="Tracked venture and program names"><div>{programMarks.map(mark=><span key={mark}>{programIconPaths[mark]?<svg viewBox="0 0 24 24" aria-hidden="true"><path d={programIconPaths[mark]}/></svg>:<i>{mark[0]}</i>}<em>{mark}</em></span>)}{programMarks.map(mark=><span key={mark+"-copy"} aria-hidden="true">{programIconPaths[mark]?<svg viewBox="0 0 24 24" aria-hidden="true"><path d={programIconPaths[mark]}/></svg>:<i>{mark[0]}</i>}<em>{mark}</em></span>)}</div></div>
     <div className="product-stage" id="product">
      <div className="product-frame" aria-label="Startfund product preview">
       <aside><div className="preview-brand"><BrandMark size={24}/> Startfund</div><span className="side-active">Funding radar</span><span>Catalog</span><span>Agent updates</span><span>Weekly digest</span><div className="side-note">Private beta workspace</div></aside>

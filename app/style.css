@@ -244,3 +244,36 @@ footer{color:#6c7c71}
  .landing-copy h1{font-size:clamp(56px,6.1vw,88px);line-height:1}
  .lane-strip{margin-top:44px}
 }
+
+.logo-marquee{overflow:hidden;margin:-8px 0 34px;border-block:1px solid #d8d1c1;mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
+.logo-marquee>div{display:flex;width:max-content;animation:logo-scroll 42s linear infinite}
+.logo-marquee span{display:flex;align-items:center;justify-content:center;min-width:150px;height:72px;margin-right:10px;color:#3e4642;font-family:Georgia,"Times New Roman",serif;font-size:22px;font-weight:650;letter-spacing:-.03em;filter:grayscale(1);opacity:.78}
+.logo-marquee span:nth-child(even){font-family:system-ui,sans-serif;font-size:16px;letter-spacing:.02em}
+@keyframes logo-scroll{to{transform:translateX(-50%)}}
+@media(prefers-reduced-motion:reduce){.logo-marquee>div{animation:none}}
+.dashboard-hero{display:grid;grid-template-columns:minmax(280px,1fr) minmax(520px,1.4fr);gap:24px;align-items:end;max-width:none;padding:32px 0 20px}
+.dashboard-hero h1{font-size:clamp(34px,4vw,54px);background:none;color:var(--ink);max-width:none}
+.dashboard-hero p{margin-bottom:0}
+.dashboard-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.dashboard-metrics article{min-width:0;padding:15px;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:0 8px 24px rgb(31 61 45 / .05)}
+.dashboard-metrics span{display:block;color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.dashboard-metrics strong{display:block;margin-top:5px;font-size:27px;letter-spacing:-.04em}
+.dashboard-metrics a{font-size:12px;font-weight:700}
+@media(max-width:900px){.dashboard-hero{grid-template-columns:1fr}.dashboard-metrics{grid-template-columns:repeat(2,1fr)}}
+@media(min-width:981px){
+ .shell>header.app-nav{position:fixed;inset:0 auto 0 0;z-index:30;width:224px;height:100vh;margin:0;padding:24px 18px;flex-direction:column;align-items:stretch;gap:10px;border:0;border-radius:0;background:#101914;color:#e9eee9;box-shadow:none}
+ .app-nav .brand{color:#fff}.app-nav .brand-mark{color:#e9e1cc}.app-nav .topline{margin:0 0 28px;color:#9faf9f}
+ .app-nav .secondary{margin:0;width:100%;border-color:#35423a;background:#18251e;color:#dce5dc;text-align:left}.app-nav button{margin-left:0}
+ .app-nav~main,.app-nav~footer{margin-left:248px}.shell:has(.app-nav){max-width:none;padding-right:36px;padding-left:0}
+ .shell:has(.app-nav) .dashboard-hero h1{font-size:clamp(34px,3.5vw,48px)}
+}
+.logo-marquee i{display:grid;place-items:center;width:30px;height:30px;margin-right:9px;border:1px solid currentColor;border-radius:7px;font-family:system-ui,sans-serif;font-size:12px;font-style:normal;font-weight:750;letter-spacing:0}
+.logo-marquee span{display:flex}
+.app-nav-link{display:flex;align-items:center;min-height:40px;padding:9px 12px;border:1px solid transparent;border-radius:7px;background:transparent;color:#c4cec5;font-weight:650;text-align:left;text-decoration:none}
+.app-nav-link:hover,.app-nav-link.active{border-color:#35423a;background:#18251e;color:#fff}
+.app-nav-link.nav-button{width:100%;margin:0;font:inherit;cursor:pointer}
+.app-nav-note{margin-top:auto;padding:13px;border:1px solid #35423a;border-radius:9px;color:#dce5dc;font-size:13px;line-height:1.4}
+.app-nav-note span{color:#93a194;font-size:12px}
+@media(max-width:980px){.app-nav-link{display:inline-flex;width:auto}.app-nav-note{display:none}}
+.logo-marquee svg{width:27px;height:27px;margin-right:9px;fill:currentColor}
+.logo-marquee em{font-style:normal}
