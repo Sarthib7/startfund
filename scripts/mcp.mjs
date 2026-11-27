@@ -4,8 +4,8 @@ const url=new URL("/api/catalog",process.env.STARTFUND_URL||"http://127.0.0.1:31
 const spec={name:"search_funding",description:"Search startup funding opportunities, evidence, and news/filing signals. Historical awards and filings are not open funding.",inputSchema:{
  type:"object",properties:{q:{type:"string",maxLength:120},source:{type:"string"},limit:{type:"integer",minimum:1,maximum:30}},additionalProperties:false
 }};
-const updateSpec={name:"get_funding_updates",description:"Read cursor-paginated funding opportunity and market update events.",inputSchema:{
- type:"object",properties:{cursor:{type:"string",pattern:"^\\d+$"},limit:{type:"integer",minimum:1,maximum:100}},additionalProperties:false
+const updateSpec={name:"get_funding_updates",description:"Read the Pro-only funding update journal. Requires STARTFUND_API_KEY as a Pro bearer key. limit caps journal rows scanned, not returned events. cursor is the sequence of the last scanned row. Rows skipped by the type filter and rows excluded as invalid or non-HTTPS still advance cursor. Keep paging while hasMore is true, even when events is empty. opportunity.deadline_changed events include newDeadline when recorded. Pro keys get 500 requests per UTC day with an 8-per-minute burst limit.",inputSchema:{
+ type:"object",properties:{cursor:{type:"string",pattern:"^\\d+$"},limit:{type:"integer",minimum:1,maximum:100},type:{type:"string",enum:["opportunity.new","opportunity.deadline_changed","market.signal","market.regulatory_filing","signal.unknown"]}},additionalProperties:false
 }};
 const country={type:"string",pattern:"^[A-Za-z]{2}$"};
 const subdivision={type:"string",pattern:"^[A-Za-z]{2}-[A-Za-z0-9]{1,3}$"};
@@ -37,7 +37,7 @@ async function respond(m){
    const catalog=name===spec.name, updates=name===updateSpec.name;
    const target=new URL(updates?"/api/agent/updates":catalog?"/api/catalog":"/api/assistant",url);
    if(catalog)for(const k of ["q","source","limit"])if(args[k]!==undefined)target.searchParams.set(k,String(args[k]));
-   if(updates)for(const k of ["cursor","limit"])if(args[k]!==undefined)target.searchParams.set(k,String(args[k]));
+   if(updates)for(const k of ["cursor","limit","type"])if(args[k]!==undefined)target.searchParams.set(k,String(args[k]));
    try{
     const headers={"x-startfund-client":"mcp"};
     if(process.env.STARTFUND_API_KEY)headers.authorization=`Bearer ${process.env.STARTFUND_API_KEY}`;

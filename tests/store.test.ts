@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { db } from "../lib/database";
-import { catalog } from "../lib/store";
+import { agentUpdates, catalog } from "../lib/store";
 import { parseUs, sources } from "../lib/sources";
 
 test("a persisted topical cache hit expires in memory at the stored deadline",async t=>{
@@ -47,4 +47,7 @@ test("deadline change signals use the fetch time rather than the original public
  assert.equal(signal.postedAt,original);
  const row=(await store.all("SELECT observed FROM signals WHERE id=?",signal.id))[0];
  assert.equal(row.observed,fetched);
+ const events=(await agentUpdates(0,10)).events;
+ assert.deepEqual(events.map(event=>event.type),["opportunity.deadline_changed"]);
+ assert.equal(events[0].newDeadline,"2030-12-31");
 });

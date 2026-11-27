@@ -48,7 +48,7 @@ export async function sourceRows(name: Source) {
           const id=item.signal ? item.id : `${item.id}-${at}`;
           const observed=change==="Deadline changed"?at:item.postedAt??at;
           writes.push({sql:"INSERT INTO signals VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET observed=excluded.observed,data=excluded.data",
-            args:[id,name,observed,signalJson({id,title:item.title,kind:change,source:name,url:item.url,observed,postedAt:item.postedAt,fetchedAt:at,rights:rights[name]})]});
+            args:[id,name,observed,signalJson({id,title:item.title,kind:change,source:name,url:item.url,observed,postedAt:item.postedAt,fetchedAt:at,rights:rights[name],...(change==="Deadline changed"?{deadline:item.deadline}:{})})]});
         }
       }
       writes.push({sql:"INSERT INTO sources VALUES (?,?,?) ON CONFLICT(name) DO UPDATE SET scanned=excluded.scanned,data=excluded.data",args:[name,at,JSON.stringify(items)]});
@@ -89,7 +89,7 @@ export function refreshFacts(name:FactSource):Promise<string|undefined>{
   })().finally(()=>ongoing.delete(name));
   ongoing.set(name,task);return task;
 }
-type Signal={id:string;title:string;kind:string;source:string;url:string;observed:string;rights:string;postedAt?:string;fetchedAt?:string};
+type Signal={id:string;title:string;kind:string;source:string;url:string;observed:string;rights:string;postedAt?:string;fetchedAt?:string;deadline?:string|null};
 const signalJson=(signal:Signal)=>JSON.stringify({...signal,searchText:" "+catalogWords(signal.title).join(" ")+" "});
 const updateTypes:Record<string,string>={
  "Newly observed":"opportunity.new",
@@ -97,14 +97,15 @@ const updateTypes:Record<string,string>={
  "Market signal":"market.signal",
  "Form D pooled investment fund notice":"market.regulatory_filing",
 };
+export const agentUpdateTypes:readonly string[]=[...Object.values(updateTypes),"signal.unknown"];
 const httpsUrl=(value:unknown)=>{
  if(typeof value!=="string"||value.length>2048||!/^https:\/\//i.test(value)||/[\s\\]/.test(value))return null;
  const url=URL.parse(value);
  return url?.protocol==="https:"&&!url.username&&!url.password?value:null;
 };
-export async function agentUpdates(cursor=0,limit=50){
+export async function agentUpdates(cursor=0,limit=50,typeFilter?:string){
  const store=await db();
- const rows=await store.all("SELECT rowid AS cursor,source,observed,data FROM signals WHERE rowid>? ORDER BY rowid LIMIT ?",cursor,limit+1);
+ const rows=await store.all("SELECT seq,source,observed,data FROM signal_events WHERE seq>? ORDER BY seq LIMIT ?",cursor,limit+1);
  const page=rows.slice(0,limit);
  const events=page.flatMap(row=>{
   let value:Partial<Signal>;
@@ -115,13 +116,15 @@ export async function agentUpdates(cursor=0,limit=50){
   const observedAt=typeof value.observed==="string"&&value.observed?value.observed:typeof row.observed==="string"?row.observed:null;
   if(!url||!source||!observedAt||typeof value.id!=="string"||!value.id||typeof value.title!=="string"||!value.title||typeof value.kind!=="string"||!value.kind)return [];
   const type=Object.hasOwn(updateTypes,value.kind)?updateTypes[value.kind]:"signal.unknown";
+  if(typeFilter&&type!==typeFilter)return [];
   return [{id:value.id,type,observedAt,source,title:value.title,url,kind:value.kind,
    ...(typeof value.postedAt==="string"?{postedAt:value.postedAt}:{}),
    ...(typeof value.fetchedAt==="string"?{fetchedAt:value.fetchedAt}:{}),
    ...(typeof value.rights==="string"?{rights:value.rights}:{}),
+   ...(type==="opportunity.deadline_changed"&&(typeof value.deadline==="string"||value.deadline===null)?{newDeadline:value.deadline}:{}),
   }];
  });
- return {cursor:String(page.length?Number(page.at(-1)!.cursor):cursor),hasMore:rows.length>limit,events};
+ return {cursor:String(page.length?Number(page.at(-1)!.seq):cursor),hasMore:rows.length>limit,events};
 }
 type QueryResult<T>={items:T[];warning?:string};
 const topicalCache=new Map<string,{until:number;result:Promise<QueryResult<unknown>>}>();

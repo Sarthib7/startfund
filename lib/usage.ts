@@ -6,7 +6,7 @@ import {plans} from "./plans";
 
 export const dayMs=86_400_000;
 const burstMs=60_000;
-const burst={scan:3,draft:5,lookup:4,assistant:8,agent:8,catalog:30,share:3,submission:2,checkout:3} as const;
+const burst={scan:3,draft:5,lookup:4,assistant:8,agent:8,agent_updates:8,catalog:30,share:3,submission:2,checkout:3} as const;
 const visitorCookie="startfund-visitor";
 type Action=keyof typeof burst;
 type Identity={actor:string;ip:string;plan:keyof typeof plans;cookie?:string};
@@ -82,7 +82,7 @@ function globalCap(){
  return Number.isSafeInteger(n)&&n>0?n:1000;
 }
 const firstOfDay=(now:number)=>Math.floor(now/dayMs)*dayMs;
-const actionNames={scan:"scans",draft:"drafts",lookup:"company lookups",assistant:"assistant requests",agent:"agent requests",catalog:"catalog requests",share:"share links",submission:"submissions",checkout:"checkout attempts"};
+const actionNames={scan:"scans",draft:"drafts",lookup:"company lookups",assistant:"assistant requests",agent:"agent requests",agent_updates:"agent update requests",catalog:"catalog requests",share:"share links",submission:"submissions",checkout:"checkout attempts"};
 let pruning:{day:number;task:Promise<void>}|undefined;
 function pruneUsage(day:number,store:Awaited<ReturnType<typeof db>>){
  if(pruning&&pruning.day>=day)return pruning.task;
@@ -144,9 +144,10 @@ export function usageError(action:Action,plan:keyof typeof plans,decision:Extrac
  });
 }
 
-export async function withUsage(request:Request,action:Action,endpoint:string,handler:(identity:Identity)=>Promise<Response>){
+export async function withUsage(request:Request,action:Action,endpoint:string,handler:(identity:Identity)=>Promise<Response>,options:{proOnly?:boolean}={}){
  const identity=await usageIdentity(request);
  if(!identity)return Response.json({error:"Invalid API key."},{status:401});
+ if(options.proOnly&&identity.plan!=="Pro")return Response.json({error:"Pro API access required."},{status:403});
  const decision=await meterUsage(identity,action,request.headers.get("x-startfund-client")==="mcp"?"mcp:"+endpoint:endpoint);
  const response=!decision.allowed?usageError(action,identity.plan,decision):await handler(identity);
  if(identity.cookie)response.headers.append("Set-Cookie",identity.cookie);

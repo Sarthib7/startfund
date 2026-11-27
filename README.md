@@ -39,9 +39,29 @@ Open http://localhost:3100. Requires Node.js 24+. Use `npm run dev` for developm
 - **Agent drafts:** by default drafts are deterministic templates. Set `RADAR_MODEL_PROVIDER` to `gemini`, `groq`, or `gateway` and configure its free-tier credentials (`GOOGLE_GENERATIVE_AI_API_KEY`, `GROQ_API_KEY`, or `AI_GATEWAY_API_KEY` respectively; Vercel OIDC also supported if available). Set a strong `RADAR_AGENT_SECRET` and, when the agent is not reachable at the same process's port 3100, `RADAR_EVE_URL`. Gateway defaults to `reflection/beam-free`; verify quota and terms before changing the model with `RADAR_GATEWAY_MODEL`. Draft requests send profile/listing text but not the email address to your configured provider. Provider outages or quota limits fall back to a labelled template.
 - **Weekly digest:** eve schedule runs Mondays at 13:00 UTC. Scanning never subscribes the founder. Delivery requires an explicit subscription request, a time-limited inbox confirmation and configured `RESEND_API_KEY`, verified `RADAR_EMAIL_FROM`, `RADAR_ALLOWED_RECIPIENT`, and an HTTPS `RADAR_PUBLIC_ORIGIN`. Each digest includes an unsubscribe link; outreach stays draft-only.
 
+### Agent updates API
+
+`GET /api/agent/updates` is a Pro-only JSON feed for funding opportunity and market changes. Send `Authorization: Bearer <key>` with a Pro API key or an operator key configured in `RADAR_API_KEYS`. The stdio MCP bridge sends `STARTFUND_API_KEY` as the same bearer credential.
+
+Query parameters:
+
+- `cursor`: decimal event sequence to start after. The default is `0`.
+- `limit`: maximum journal rows scanned in one request. The default is `50`; the range is `1` to `100`.
+- `type`: optional exact event type. Values are `opportunity.new`, `opportunity.deadline_changed`, `market.signal`, `market.regulatory_filing`, and `signal.unknown`.
+
+The response contains `events`, `cursor`, and `hasMore`. `cursor` is the sequence of the last journal row scanned in the page. Rows hidden by `type` advance the cursor. Rows also advance the cursor when they are malformed or do not have a safe URL. If no journal row is scanned, the response returns the supplied cursor unchanged. Use the returned cursor for the next request. Events are ordered by durable ingestion sequence, not `observedAt`.
+
+`hasMore` means at least one unscanned journal row existed after the page when the query ran. It does not mean another row matches `type`. Because `limit` caps scanned rows, a filtered page can be empty. Keep paging while `hasMore` is true.
+
+Each event has `id`, `type`, `observedAt`, `source`, `title`, `url`, and `kind`. Events can also have `postedAt`, `fetchedAt`, and `rights`. `id` identifies the signal record. It can repeat when a market signal is corrected because each correction is a new journal event. For `opportunity.deadline_changed` events, `newDeadline` is the replacement deadline as a string. It is `null` when the deadline was cleared or became unknown. Events written before this field existed can omit it.
+
+A safe URL uses HTTPS and has no credentials. Only events with safe URLs are emitted. Malformed payloads and unsafe URLs are not emitted. They still count as scanned journal rows for the cursor, so a page can contain fewer events than `limit`.
+
+Update requests use the separate `agent_updates` usage action. Pro keys get 500 requests per UTC day across the API and MCP, with an 8-per-minute burst limit. Free accounts get no update-feed quota. The interactive eve agent keeps its separate `agent` quota.
+
 ### MCP
 
-With the server running, add this stdio bridge to a compatible MCP host (use the absolute path to your checkout). Tools: `search_funding`, `analyze_company`, `recommend`, and `builder_bundle`. The bridge cannot read saved startup profiles or send messages; only the parameters you supply are processed. Set `STARTFUND_URL` in the MCP host’s environment to point at another installation.
+With the server running, add this stdio bridge to a compatible MCP host (use the absolute path to your checkout). Tools: `search_funding`, `analyze_company`, `recommend`, `builder_bundle`, and `get_funding_updates`. The update tool requires `STARTFUND_API_KEY` with Pro access and uses the cursor contract above. The bridge cannot read saved startup profiles or send messages; only the parameters you supply are processed. Set `STARTFUND_URL` in the MCP host’s environment to point at another installation.
 
 ```json
 {
