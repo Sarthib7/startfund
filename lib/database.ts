@@ -23,6 +23,15 @@ const schema=[
  "CREATE TABLE IF NOT EXISTS opportunities (id TEXT PRIMARY KEY, source TEXT NOT NULL, program_id TEXT, data TEXT NOT NULL)",
  "CREATE TABLE IF NOT EXISTS evidence (id TEXT PRIMARY KEY, source TEXT NOT NULL, entity_id TEXT NOT NULL, data TEXT NOT NULL)",
  "CREATE TABLE IF NOT EXISTS signals (id TEXT PRIMARY KEY, source TEXT NOT NULL, observed TEXT NOT NULL, data TEXT NOT NULL)",
+ "CREATE TABLE IF NOT EXISTS signal_events (seq INTEGER PRIMARY KEY AUTOINCREMENT, signal_id TEXT NOT NULL, source TEXT NOT NULL, observed TEXT NOT NULL, data TEXT NOT NULL)",
+ "INSERT INTO signal_events(signal_id,source,observed,data) SELECT id,source,observed,data FROM signals WHERE NOT EXISTS (SELECT 1 FROM signal_events) ORDER BY rowid",
+ `CREATE TRIGGER IF NOT EXISTS signal_events_insert AFTER INSERT ON signals BEGIN
+  INSERT INTO signal_events(signal_id,source,observed,data) VALUES (NEW.id,NEW.source,NEW.observed,NEW.data);
+ END`,
+ `CREATE TRIGGER IF NOT EXISTS signal_events_update AFTER UPDATE ON signals
+ WHEN OLD.observed<>NEW.observed OR json_remove(OLD.data,'$.fetchedAt')<>json_remove(NEW.data,'$.fetchedAt') BEGIN
+  INSERT INTO signal_events(signal_id,source,observed,data) VALUES (NEW.id,NEW.source,NEW.observed,NEW.data);
+ END`,
  "CREATE TABLE IF NOT EXISTS fact_runs (source TEXT PRIMARY KEY, scanned TEXT NOT NULL)",
  "CREATE TABLE IF NOT EXISTS topical_cache (key TEXT PRIMARY KEY, expires INTEGER NOT NULL, data TEXT NOT NULL)",
  "CREATE TABLE IF NOT EXISTS digest_subscriptions (profile_id TEXT PRIMARY KEY, email TEXT NOT NULL, confirmation TEXT NOT NULL, expires INTEGER NOT NULL, confirmed INTEGER, unsubscribe TEXT NOT NULL, sent TEXT)",
