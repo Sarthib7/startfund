@@ -13,7 +13,7 @@ export function LoginForm({next}:{next:string}){
    window.location.assign(target);
   }catch(error){setError(error instanceof Error?error.message:"Invalid or expired invite code.");setBusy(false);}
  }
- return <form className="login-form" onSubmit={submit}>
+ return <form className="login-form setup" onSubmit={submit}>
   <label>Invite code<input type="text" value={code} onChange={event=>setCode(event.target.value.toUpperCase())} autoComplete="one-time-code" autoCapitalize="characters" spellCheck={false} placeholder="XXXX-XXXX-XXXX-XXXX" maxLength={64} required/></label>
   <button className="primary" disabled={busy||!code.trim()}>{busy?"Checking…":"Enter Startfund"}</button>
   <p role="alert">{error}</p>
