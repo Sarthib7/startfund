@@ -19,3 +19,15 @@ export function catalogOverview(listings:Opportunity[],asOf:string) {
     deadlines:deadlines.map(row=>({id:row.id,title:row.title,url:row.url,source:row.source,date:row.deadline!})),
   };
 }
+
+export function openSourceProgramGroups(rows:Opportunity[],asOf:string) {
+  const applying=(row:Opportunity)=>["Open","Rolling","Late applications"].includes(listingStatus(row,asOf));
+  const group=(id:"direct"|"startup-dependent",title:string,description:string)=>{
+    const listings=rows.filter(row=>row.openSourceEligibility===id&&applying(row));
+    return {id,title,description,listings,applyNow:listings.length};
+  };
+  return [
+    group("direct","Direct open-source opportunities","Official terms explicitly include open-source projects or maintainers."),
+    group("startup-dependent","Startup-dependent opportunities","Open-source teams must also satisfy startup, company, funding, or partner rules."),
+  ];
+}

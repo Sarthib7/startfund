@@ -23,6 +23,15 @@ const schema=[
  "CREATE TABLE IF NOT EXISTS opportunities (id TEXT PRIMARY KEY, source TEXT NOT NULL, program_id TEXT, data TEXT NOT NULL)",
  "CREATE TABLE IF NOT EXISTS evidence (id TEXT PRIMARY KEY, source TEXT NOT NULL, entity_id TEXT NOT NULL, data TEXT NOT NULL)",
  "CREATE TABLE IF NOT EXISTS signals (id TEXT PRIMARY KEY, source TEXT NOT NULL, observed TEXT NOT NULL, data TEXT NOT NULL)",
+ "CREATE TABLE IF NOT EXISTS signal_events (seq INTEGER PRIMARY KEY AUTOINCREMENT, signal_id TEXT NOT NULL, source TEXT NOT NULL, observed TEXT NOT NULL, data TEXT NOT NULL)",
+ "INSERT INTO signal_events(signal_id,source,observed,data) SELECT id,source,observed,data FROM signals WHERE NOT EXISTS (SELECT 1 FROM signal_events) ORDER BY rowid",
+ `CREATE TRIGGER IF NOT EXISTS signal_events_insert AFTER INSERT ON signals BEGIN
+  INSERT INTO signal_events(signal_id,source,observed,data) VALUES (NEW.id,NEW.source,NEW.observed,NEW.data);
+ END`,
+ `CREATE TRIGGER IF NOT EXISTS signal_events_update AFTER UPDATE ON signals
+ WHEN OLD.observed<>NEW.observed OR json_remove(OLD.data,'$.fetchedAt')<>json_remove(NEW.data,'$.fetchedAt') BEGIN
+  INSERT INTO signal_events(signal_id,source,observed,data) VALUES (NEW.id,NEW.source,NEW.observed,NEW.data);
+ END`,
  "CREATE TABLE IF NOT EXISTS fact_runs (source TEXT PRIMARY KEY, scanned TEXT NOT NULL)",
  "CREATE TABLE IF NOT EXISTS topical_cache (key TEXT PRIMARY KEY, expires INTEGER NOT NULL, data TEXT NOT NULL)",
  "CREATE TABLE IF NOT EXISTS digest_subscriptions (profile_id TEXT PRIMARY KEY, email TEXT NOT NULL, confirmation TEXT NOT NULL, expires INTEGER NOT NULL, confirmed INTEGER, unsubscribe TEXT NOT NULL, sent TEXT)",
@@ -46,10 +55,13 @@ const schema=[
  "CREATE TABLE IF NOT EXISTS shared_scans (id TEXT PRIMARY KEY, data TEXT NOT NULL)",
  "CREATE TABLE IF NOT EXISTS opportunity_suggestions (id TEXT PRIMARY KEY, status TEXT NOT NULL, created TEXT NOT NULL, reviewed TEXT, data TEXT NOT NULL)",
  "CREATE INDEX IF NOT EXISTS suggestion_status ON opportunity_suggestions(status,created)",
+ "CREATE TABLE IF NOT EXISTS beta_invites (id TEXT PRIMARY KEY, code_hash TEXT NOT NULL UNIQUE, created INTEGER NOT NULL, expires INTEGER NOT NULL, used INTEGER)",
+ "CREATE TABLE IF NOT EXISTS waitlist_signups (email TEXT PRIMARY KEY, created INTEGER NOT NULL)",
  "CREATE TABLE IF NOT EXISTS billing_customers (visitor TEXT PRIMARY KEY, customer TEXT NOT NULL UNIQUE, key_hash TEXT UNIQUE)",
  "CREATE TABLE IF NOT EXISTS billing_subscriptions (id TEXT PRIMARY KEY, customer TEXT NOT NULL, status TEXT NOT NULL, event_created INTEGER NOT NULL)",
  "CREATE INDEX IF NOT EXISTS billing_subscription_customer ON billing_subscriptions(customer,status)",
  "CREATE TABLE IF NOT EXISTS billing_events (id TEXT PRIMARY KEY, created INTEGER NOT NULL, customer TEXT NOT NULL, subscription TEXT NOT NULL, status TEXT NOT NULL)",
+ "CREATE INDEX IF NOT EXISTS beta_invites_expiry ON beta_invites(expires)",
  `CREATE TRIGGER IF NOT EXISTS billing_apply_event AFTER INSERT ON billing_events BEGIN
   INSERT INTO billing_subscriptions(id,customer,status,event_created) VALUES (NEW.subscription,NEW.customer,NEW.status,NEW.created)
   ON CONFLICT(id) DO UPDATE SET status=excluded.status,event_created=excluded.event_created

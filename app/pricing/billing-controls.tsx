@@ -85,7 +85,7 @@ export function BillingControls({success=false}:{success?:boolean}){
     {status.pro&&!status.restored&&status.issued&&!key&&<button className="secondary" disabled={busy} onClick={()=>void act("claim",{rotate:true})}>Replace Pro API key</button>}
     {status.customer&&<button className="secondary" disabled={busy} onClick={()=>void act("portal")}>Manage billing ↗</button>}
     {!status.pro&&<button className="secondary" aria-expanded={restore} onClick={()=>setRestore(!restore)}>Restore Pro</button>}
-    {success&&status.pro&&<Link className="secondary nav-link pricing-link" href="/">Open funding radar ↗</Link>}
+    {success&&status.pro&&<Link className="secondary nav-link pricing-link" href="/app">Open funding radar ↗</Link>}
    </div>
    {restore&&<form onSubmit={restorePro}>
     <label>Pro API key<input name="proKey" type="password" required maxLength={50} autoComplete="off"/></label>

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+<title id="title">Startfund icon</title><desc id="desc">A deep green ledger folio turns upward, with a restrained brass edge.</desc>
+<rect width="64" height="64" rx="14" fill="#0B2B22"/>
+<g transform="translate(32 32) scale(.78) translate(-32 -32)"><g transform="translate(32 33) scale(1.2) translate(-32 -32)"><path fill="#F4EFE3" fill-rule="evenodd" d="M14 52V30C23 22 35 15 50 10V52H14Z M22 52V40C31 32 41 27 49 24V30C40 33 31 39 28 45V52Z"/><path fill="#C4A15D" d="M41 14C45 12 48 10 50 10V21L47 22L43 23Z"/></g></g>
+</svg>
