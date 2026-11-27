@@ -53,6 +53,7 @@ export type Opportunity = {
   awardFloor?:number|null; programFunding?:number|null; prerequisites?:string[]; countries?:string[]; subdivisions?:string[];
   cpvCodes?:string[]; cpvScope?:"procedure-and-lots";
   targetStages?:Exclude<Profile["stage"],"Not sure">[]; focusTopics?:string[];
+  openSourceEligibility?:"direct"|"startup-dependent";
 };
 export type Match = Opportunity & { score: number; reason: string; regionNote?: string; matchedTerms?:string[]; localGovernmentGrant?: true };
 export type Radar = { matches: Match[]; warnings: string[]; scannedAt: string; evidence?: Fact[]; scanId?:string };

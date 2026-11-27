@@ -56,6 +56,9 @@
  .catalog-hero{gap:10px}.catalog-radar{width:76px}.overview-grid{grid-template-columns:minmax(0,1fr);gap:20px}
  .overview-stats div{padding-inline:8px}
 }
+.program-paths h3{margin:0;font-size:16px;letter-spacing:-.02em}
+.program-paths .plan-grid{align-items:start}
+.program-paths .rowtitle{display:inline-flex;align-items:center;min-height:40px}
 .mobile-label{display:none}
 @media(max-width:760px){
  .shell header a,.shell button,.shell .modal a[href^="mailto:"]{min-height:44px}

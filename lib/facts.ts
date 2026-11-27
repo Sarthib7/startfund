@@ -69,13 +69,13 @@ export function secFacts(input:unknown,fetchedAt:string):Fact[]{
  });
 }
 export const corporate:readonly {id:string;name:string;url:string;terms:string}[]=[
- {id:"aws",name:"AWS Activate",url:"https://aws.amazon.com/startups/credits/",terms:"Cloud credits for eligible startups; credits are not cash, and tiers depend on affiliation and application."},
- {id:"google",name:"Google for Startups Cloud Program",url:"https://cloud.google.com/startup",terms:"Cloud credits and technical support; award caps and eligibility depend on the program tier."},
- {id:"microsoft",name:"Microsoft for Startups",url:"https://www.microsoft.com/en-us/startups",terms:"Azure credits and startup support; confirm the current offer and tier requirements."},
- {id:"nvidia",name:"NVIDIA Inception",url:"https://www.nvidia.com/en-us/startups/",terms:"Startup program with technical support and partner offers; not a cash grant."}
+ {id:"aws",name:"AWS Activate",url:"https://aws.amazon.com/startups/credits/",terms:"Cloud credits for eligible startups; self-funded startups can apply for up to $5,000 and Activate Portfolio startups for up to $200,000. Credits are not cash."},
+ {id:"google",name:"Google for Startups Cloud Program",url:"https://cloud.google.com/startup",terms:"Cloud credits and technical support; official tiers range from $2,000 for early startups to $200,000, or $350,000 for qualifying AI startups. Credits are not cash."},
+ {id:"microsoft",name:"Microsoft for Startups",url:"https://www.microsoft.com/en-us/startups",terms:"Azure credits and startup support; qualifying startups can unlock up to $150,000 in credits over time. Credits are not cash."},
+ {id:"nvidia",name:"NVIDIA Inception",url:"https://www.nvidia.com/en-us/startups/",terms:"Free rolling startup program with technical support, preferred pricing, and partner cloud-credit offers; not a cash grant."}
 ];
 export function corporateProgramRows(fetchedAt:string):Opportunity[]{
- return corporate.map(r=>({id:r.id,title:r.name,kind:"Perks",region:"Global",source:"Accelerator directory",url:r.url,deadline:null,amount:null,currency:"USD",eligibility:r.terms,fetchedAt,programId:r.id}));
+ return corporate.map(r=>({id:r.id,title:r.name,kind:"Perks",region:"Global",source:"Accelerator directory",url:r.url,deadline:null,amount:null,currency:"USD",eligibility:r.terms,status:"Rolling",openSourceEligibility:"startup-dependent",verifiedAt:"2026-11-27",fetchedAt,programId:r.id}));
 }
 
 export async function searchNsf(read:Reader,t:string,keyword="SBIR"){
