@@ -13,7 +13,7 @@ VERIFIED: `devin/release-integration` is the canonical local release-candidate b
 
 CORRECTED: an earlier revision of this handoff said no push had been performed. That was true before the small-PR update. VERIFIED: `git push origin devin/premium-brand devin/invite-beta-access devin/agent-updates devin/innovate-date-fix devin/open-source-programs devin/test-workflow devin/release-integration` exited 0. The push updated PR branches 8, 9, and 10 and created remote branches for PRs 11 through 14. No merge into `main`, production deployment, or external publication has been performed.
 
-VERIFIED: open pull requests are #8 agent updates, #9 Folio Turn brand, #10 invite beta access, #11 Innovate UK date parsing, #12 open-source program paths, #13 pull-request verification workflow, and #14 integrated release candidate.
+VERIFIED: open pull requests are PR 8 agent updates, PR 9 Folio Turn brand, PR 10 invite beta access, PR 11 Innovate UK date parsing, PR 12 open-source program paths, PR 13 pull-request verification workflow, and PR 14 integrated release candidate.
 
 VERIFIED: `/Volumes/Sarthi MAC/OSS/startfund` is not the canonical clean tree. It still has uncommitted duplicate brand and date-fix work plus untracked local artifacts. Use `/Volumes/Sarthi MAC/OSS/startfund-release-integration` for release verification.
 
