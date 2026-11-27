@@ -152,6 +152,11 @@ test("proxy requires a signed session and matcher leaves public beta paths reach
  for(const url of ["/","/pricing","/api/radar","/eve/v1/sessions"])
   assert.equal(testing.unstable_doesMiddlewareMatch({config,url}),true,url);
 
+ const publicHome=await proxy(new server.NextRequest("https://startfund.test/"));
+ assert.notEqual(publicHome.status,307);
+ const publicWaitlist=await proxy(new server.NextRequest("https://startfund.test/api/waitlist",{method:"POST"}));
+ assert.notEqual(publicWaitlist.status,401);
+
  const anonymous=await proxy(new server.NextRequest("https://startfund.test/pricing?plan=pro"));
  assert.equal(anonymous.status,307);
  const loginUrl=new URL(anonymous.headers.get("location")!);
@@ -169,12 +174,12 @@ test("proxy requires a signed session and matcher leaves public beta paths reach
 
  const session=createBetaSession(now);
  assert.ok(session);
- const signed=await proxy(new server.NextRequest("https://startfund.test/",{
+ const signed=await proxy(new server.NextRequest("https://startfund.test/pricing",{
   headers:{cookie:`${betaCookie}=${session.value}`},
  }));
  assert.notEqual(signed.status,307);
  assert.equal(signed.headers.get("location"),null);
- const tampered=await proxy(new server.NextRequest("https://startfund.test/",{
+ const tampered=await proxy(new server.NextRequest("https://startfund.test/pricing",{
   headers:{cookie:`${betaCookie}=${session.value.slice(0,-1)}${session.value.endsWith("A")?"B":"A"}`},
  }));
  assert.equal(tampered.status,307);

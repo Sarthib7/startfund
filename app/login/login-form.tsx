@@ -3,7 +3,7 @@ import {useState,type FormEvent} from "react";
 
 export function LoginForm({next}:{next:string}){
  const [code,setCode]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState("");
- const target=next.startsWith("/")&&!next.startsWith("//")&&!next.includes("\\")?next:"/";
+ const target=next.startsWith("/")&&!next.startsWith("//")&&!next.includes("\\")?next:"/app";
  async function submit(event:FormEvent){
   event.preventDefault();setBusy(true);setError("");
   try{

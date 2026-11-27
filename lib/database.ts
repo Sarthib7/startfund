@@ -56,6 +56,7 @@ const schema=[
  "CREATE TABLE IF NOT EXISTS opportunity_suggestions (id TEXT PRIMARY KEY, status TEXT NOT NULL, created TEXT NOT NULL, reviewed TEXT, data TEXT NOT NULL)",
  "CREATE INDEX IF NOT EXISTS suggestion_status ON opportunity_suggestions(status,created)",
  "CREATE TABLE IF NOT EXISTS beta_invites (id TEXT PRIMARY KEY, code_hash TEXT NOT NULL UNIQUE, created INTEGER NOT NULL, expires INTEGER NOT NULL, used INTEGER)",
+ "CREATE TABLE IF NOT EXISTS waitlist_signups (email TEXT PRIMARY KEY, created INTEGER NOT NULL)",
  "CREATE TABLE IF NOT EXISTS billing_customers (visitor TEXT PRIMARY KEY, customer TEXT NOT NULL UNIQUE, key_hash TEXT UNIQUE)",
  "CREATE TABLE IF NOT EXISTS billing_subscriptions (id TEXT PRIMARY KEY, customer TEXT NOT NULL, status TEXT NOT NULL, event_created INTEGER NOT NULL)",
  "CREATE INDEX IF NOT EXISTS billing_subscription_customer ON billing_subscriptions(customer,status)",

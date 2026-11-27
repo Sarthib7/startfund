@@ -9,7 +9,7 @@ npm run build
 npm start
 ```
 
-Open http://localhost:3100. Requires Node.js 24+. Use `npm run dev` for development. Data is stored in SQLite under `.radar/`; set `RADAR_DB_PATH` to a persistent volume for a single-instance deployment.
+Open http://localhost:3100. Requires Node.js 24+. Use `npm run dev` for development. The public root is the landing page and waitlist. The funding radar lives at `/app` after invite sign-in. Data is stored in SQLite under `.radar/`; set `RADAR_DB_PATH` to a persistent volume for a single-instance deployment.
 
 ### Public deployment on Vercel
 
@@ -20,7 +20,7 @@ Open http://localhost:3100. Requires Node.js 24+. Use `npm run dev` for developm
 
 ### Invite beta access
 
-The beta deployment requires a signed beta session for browser pages and most API routes. Operators generate one-time invite codes from `/admin/sign-in` with `RADAR_ADMIN_TOKEN`. Invite codes expire after 30 days. Beta sessions expire after 7 days.
+The beta deployment requires a signed beta session for browser pages and most API routes. The public landing page, `/api/waitlist`, login routes, shared reports, static assets, and the Stripe webhook remain reachable. Waitlist signups store only an email address and creation time. Operators can read them from `/api/admin/waitlist` with `RADAR_ADMIN_TOKEN`, then generate one-time invite codes from `/admin/sign-in`. Invite codes expire after 30 days. Beta sessions expire after 7 days.
 
 Set `RADAR_AUTH_SECRET` before using the beta gate. `RADAR_USAGE_SECRET` is a supported fallback, but a dedicated secret is safer to rotate. Sessions are stateless. Rotation revokes all beta sessions; individual session revocation is not available in this version.
 

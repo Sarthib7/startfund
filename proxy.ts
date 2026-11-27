@@ -18,6 +18,7 @@ function loginRedirect(request:NextRequest){
 
 export default function proxy(request:NextRequest){
  const path=request.nextUrl.pathname;
+ if(path==="/"||path==="/api/waitlist")return NextResponse.next();
  const api=apiPath(path);
  if(api&&request.headers.has("authorization"))return NextResponse.next();
  if(readBetaSession(request.headers))return NextResponse.next();

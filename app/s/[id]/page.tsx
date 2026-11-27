@@ -22,7 +22,7 @@ export default async function SharedScan({params}:Props){
  if(!snapshot)notFound();
  const {company,matches,scannedAt}=snapshot;
  return <div className="shell">
-  <header><Link href="/" className="brand"><BrandMark/> Startfund</Link><Link href="/" className="secondary nav-link pricing-link">Run a scan ↗</Link></header>
+  <header><Link href="/" className="brand"><BrandMark/> Startfund</Link><Link href="/app" className="secondary nav-link pricing-link">Run a scan ↗</Link></header>
   <main><div className="hero"><p className="eyebrow"><span className="live"/> SHARED FUNDING SNAPSHOT</p><h1>{company.name}<span>.</span></h1><p>{company.sector} · {regions[company.region]} · {company.stage}</p></div>
   <section className="panel detail" aria-label="Report summary"><ReportSummary score={snapshot.topScore} total={snapshot.matchCount}/>
    <p className="meta">Public, read-only snapshot · {scannedAt.slice(0,10)} UTC</p>

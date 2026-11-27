@@ -15,7 +15,7 @@ export default function Pricing(){
    <div className="plan-grid">
     <section className="panel detail plan-card"><div className="section-kicker">01 / FREE</div><h2>Free</h2><p className="plan-price">$0 <small>/ month</small></p><ul>
      <li>Unlimited catalog browsing</li><li>{plans.Free.scan} scans per day</li><li>{plans.Free.draft} drafts per day</li>
-    </ul><Link href="/" className="secondary nav-link pricing-link">Open funding radar ↗</Link></section>
+    </ul><Link href="/app" className="secondary nav-link pricing-link">Open funding radar ↗</Link></section>
     <section className="panel detail plan-card plan-pro"><div className="section-kicker">02 / PRO</div><h2>Pro</h2><p className="plan-price">${proPrice} <small>/ month</small></p><ul>
      <li>{plans.Pro.scan} scans and {plans.Pro.draft} drafts per day</li><li>Weekly funding digest</li><li>MCP and API keys</li><li>Saved profiles</li>
     </ul>{billingConfig()?<BillingControls/>:<><p className="badge">Coming soon</p><p className="muted">No payment or sign-up yet.</p></>}</section>

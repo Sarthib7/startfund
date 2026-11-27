@@ -7,7 +7,7 @@ import { LoginForm } from "./login-form";
 export const dynamic="force-dynamic";
 export const metadata={title:"Private beta — Startfund",robots:{index:false,follow:false}};
 function safeNext(value:string|undefined){
- return value?.startsWith("/")&&!value.startsWith("//")&&!value.includes("\\")?value:"/";
+ return value?.startsWith("/")&&!value.startsWith("//")&&!value.includes("\\")?value:"/app";
 }
 
 export default async function Login({searchParams}:{searchParams:Promise<{next?:string|string[]}>}){
