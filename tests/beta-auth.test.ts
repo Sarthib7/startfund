@@ -142,6 +142,8 @@ test("proxy requires a signed session and matcher leaves public beta paths reach
   "/admin/sign-in",
   "/api/auth/redeem",
   "/api/billing/webhook",
+  "/s/share-id",
+  "/s/share-id/opengraph-image",
   "/_next/static/chunk.js",
   "/_next/image",
   "/favicon.ico",

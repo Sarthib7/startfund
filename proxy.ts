@@ -27,6 +27,6 @@ export default function proxy(request:NextRequest){
 
 export const config={
  matcher:[
-  "/((?!login|admin/sign-in|api/auth|api/billing/webhook|_next/static|_next/image|favicon.ico|icon.svg|icon.png|apple-icon.png|sitemap.xml|robots.txt|brand/).*)",
+  "/((?!login|admin/sign-in|api/auth|api/billing/webhook|s/|_next/static|_next/image|favicon.ico|icon.svg|icon.png|apple-icon.png|sitemap.xml|robots.txt|brand/).*)",
  ],
 };
