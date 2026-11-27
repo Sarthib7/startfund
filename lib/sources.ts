@@ -165,7 +165,9 @@ export function parseInnovateUk(html:string,fetchedAt:string):Opportunity[] {
     const dates=block.match(/<dl class="date-definition-list[^"]*"[^>]*>([\s\S]*?)<\/dl>/i)?.[1]??"";
     const dateOf=(label:string)=>{
       const raw=dates.match(new RegExp(`<dt>\\s*${label}:\\s*<\\/dt>\\s*<dd[^>]*>([^<]+)<\\/dd>`,"i"))?.[1];
-      return raw && /^\d{1,2} [a-z]+ \d{4}$/i.test(raw.trim()) && Number.isFinite(Date.parse(raw)) ? new Date(raw).toISOString().slice(0,10) : null;
+      const m=raw?.trim().match(/^(\d{1,2}) ([a-z]+) (\d{4})$/i);
+      const month=m?"january february march april may june july august september october november december".split(" ").indexOf(m[2].toLowerCase())+1:0;
+      return m&&month?date(`${m[3]}-${String(month).padStart(2,"0")}-${m[1].padStart(2,"0")}`):null;
     };
     const deadline=dateOf("Closes"),opensAt=dateOf("Opened")??dateOf("Opens");
     const title=cleanText(link[3],500);
