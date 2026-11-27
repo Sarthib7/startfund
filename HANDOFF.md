@@ -83,7 +83,7 @@ REPORTED: prior official-source research found the xAI startup program active an
 1. Choose release mechanics: one release-candidate PR from `devin/release-integration`, or updated stacked PRs with manual conflict resolution.
 2. Push branches only after explicit user approval.
 3. Create or update PRs, then inspect the test workflow and Vercel checks.
-4. Configure production secrets before deployment. At minimum verify `RADAR_AUTH_SECRET`, `RADAR_USAGE_SECRET`, `RADAR_ADMIN_TOKEN`, `TURSO_DATABASE_URL`, and `TURSO_AUTH_TOKEN`.
+4. Configure production secrets before deployment. VERIFIED: `vercel env ls production --scope teleshops-projects --project startfund` lists `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `RADAR_ADMIN_TOKEN`, `RADAR_USAGE_SECRET`, `RADAR_SOURCE_CONTACT`, `TURSO_DATABASE_URL`, and `TURSO_AUTH_TOKEN`. It does not list `RADAR_AUTH_SECRET`. The command hides secret values, so this verifies names and environments only, not value correctness. Decide whether to add a dedicated `RADAR_AUTH_SECRET` or accept the documented `RADAR_USAGE_SECRET` fallback for the private beta.
 5. Verify Vercel Deployment Protection and the intended Stripe mode before exposing checkout.
 6. Deploy only after explicit user approval, then smoke test login, catalog, shared reports, agent updates, MCP access, and the Turso journal migration.
 
